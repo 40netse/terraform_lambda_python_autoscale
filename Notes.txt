@@ -1,0 +1,9 @@
+…or create a new repository on the command line
+
+echo "# terraform_lambda_python_autoscale" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/40netse/terraform_lambda_python_autoscale.git
+git push -u origin master
+
