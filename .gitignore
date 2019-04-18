@@ -1,8 +1,11 @@
 # Created by .ignore support plugin (hsz.mobi)
+**/.idea
+**/hold
 **/venv
 **/.terraform
 **/terraform.tfstate
 **/terraform.tfstate.backup
 **/terraform.tfvars
+**/site-packages
 build/*
 terraform
