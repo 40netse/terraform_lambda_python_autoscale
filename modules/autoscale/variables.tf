@@ -13,20 +13,20 @@ variable "vpc_id" {
 variable "instance_type" {
   description = "Instance type to launch from the autoscale group"
 }
-variable "subnet1_id" {
+variable "public_subnet1_id" {
   description = "Provide the ID for the first public subnet"
 }
-variable "subnet2_id" {
+variable "public_subnet2_id" {
+  description = "Provide the ID for the first public subnet"
+}
+variable "private_subnet1_id" {
+  description = "Provide the ID for the first public subnet"
+}
+variable "private_subnet2_id" {
   description = "Provide the ID for the first public subnet"
 }
 variable "security_group" {
   description = "Security Group for autoscale instances"
-}
-variable "instance1_id" {
-  description = "Provide the ID for the first fgt instance"
-}
-variable "instance2_id" {
-  description = "Provide the ID for the first fgt instance"
 }
 variable "key_name" {
   description = "Keyname to use for the autoscale instance"
@@ -47,9 +47,19 @@ variable "customer_prefix" {
 variable "environment" {
   description = "The Tag Environment NLB tag"
 }
+variable "asg_type" {
+  description = "The type of autoscale group"
+}
 variable "autoscale_notifications_needed" {
   description = "autoscale notifications needed true/false"
 }
+variable "target_group_arns" {
+  description = "Target Group ARN of Load Balancer associate with autoscale group"
+}
 variable "topic_arn" {
   description = "Topic ARN for Lifecycle Notifications"
+  default     = ""
+}
+variable "userdata" {
+  description = "Userdata path"
 }

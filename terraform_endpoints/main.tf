@@ -45,62 +45,26 @@ module "ec2-asg" {
   secret_key                     = "${var.secret_key}"
   aws_region                     = "${var.aws_region}"
   vpc_id                         = "${var.vpc_id}"
+  asg_type                       = "endpoint"
   instance_type                  = "${var.instance_type}"
   ami_id                         = "${data.aws_ami.ubuntu.id}"
   subnet1_id                     = "${var.private1_subnet_id}"
   subnet2_id                     = "${var.private2_subnet_id}"
   security_group                 = "${module.ec2-sg.id}"
   key_name                       = "${var.keypair}"
-  instance1_id                   = "${module.endpoint1.instance_id}"
-  instance2_id                   = "${module.endpoint2.instance_id}"
   max_size                       = "${var.max_size}"
   min_size                       = "${var.min_size}"
   desired                        = "${var.desired}"
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
-  autoscale_notifications_needed = "false"
+  autoscale_notifications_needed = "${var.autoscale_notifications_needed}"
+  target_group_arns              = "${module.alb.target_group_arns}"
+  userdata                       = "${path.cwd}/web-userdata.tpl"
   topic_arn                      = ""
 }
 
-module "endpoint1" {
-  source = "../modules/endpoints"
-  access_key           = "${var.access_key}"
-  secret_key           = "${var.secret_key}"
-  aws_region           = "${var.aws_region}"
-  ami_id               = "${data.aws_ami.ubuntu.id}"
-  vpc_id               = "${var.vpc_id}"
-  subnet_id            = "${var.private1_subnet_id}"
-  keypair              = "${var.keypair}"
-  cidr_for_access      = "${var.cidr_for_access}"
-  customer_prefix      = "${var.customer_prefix}"
-  environment          = "${var.environment}"
-  instance_type        = "${var.instance_type}"
-  instance_count       = "1"
-  public_ip            = "${var.public_ip}"
-  security_group       = "${module.ec2-sg.id}"
-}
-
-module "endpoint2" {
-  source = "../modules/endpoints"
-  access_key           = "${var.access_key}"
-  secret_key           = "${var.secret_key}"
-  aws_region           = "${var.aws_region}"
-  ami_id               = "${data.aws_ami.ubuntu.id}"
-  vpc_id               = "${var.vpc_id}"
-  subnet_id            = "${var.private2_subnet_id}"
-  keypair              = "${var.keypair}"
-  cidr_for_access      = "${var.cidr_for_access}"
-  customer_prefix      = "${var.customer_prefix}"
-  environment          = "${var.environment}"
-  instance_type        = "${var.instance_type}"
-  instance_count       = "2"
-  public_ip            = "${var.public_ip}"
-  security_group       = "${module.ec2-sg.id}"
-}
-
-/*
-module "nlb" {
-  source               = "../modules/nlb"
+module "alb" {
+  source               = "../modules/alb"
   access_key           = "${var.access_key}"
   secret_key           = "${var.secret_key}"
   aws_region           = "${var.aws_region}"
@@ -109,7 +73,4 @@ module "nlb" {
   subnet2_id           = "${var.private2_subnet_id}"
   customer_prefix      = "${var.customer_prefix}"
   environment          = "${var.environment}"
-  instance1_id         = "${module.endpoint1.instance_id}"
-  instance2_id         = "${module.endpoint2.instance_id}"
 }
-*/

@@ -1,3 +1,4 @@
-output "sns_name" {
-    value = "${aws_sns_topic.s3_dirty_notifications.name}"
+output "arn" {
+  value       = "${aws_sns_topic.sns_asg.arn}"
+  description = "SNS Topic ARN"
 }

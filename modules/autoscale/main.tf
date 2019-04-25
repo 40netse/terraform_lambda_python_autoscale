@@ -4,29 +4,101 @@ provider "aws" {
   region        = "${var.aws_region}"
 }
 
+data "template_file" "web_userdata" {
+  template = "${file("${var.userdata}")}"
+}
+/*
 resource "aws_launch_configuration" "asg_launch" {
-  name            = "${var.customer_prefix}-${var.environment}-launch-configuration"
-  image_id        = "${var.ami_id}"
-  instance_type   = "${var.instance_type}"
-  key_name        = "${var.key_name}"
-  security_groups = ["${var.security_group}"]
+  name                        = "${var.customer_prefix}-${var.environment}-lconf"
+  image_id                    = "${var.ami_id}"
+  instance_type               = "${var.instance_type}"
+  key_name                    = "${var.key_name}"
+  security_groups             = ["${var.security_group}"]
+  user_data                   = "${data.template_file.web_userdata.rendered}"
+  associate_public_ip_address = true
+}
+*/
+resource "aws_iam_role" "asg-role" {
+  name = "${var.customer_prefix}-${var.environment}-asg-role"
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "autoscaling.amazonaws.com"
+      },
+      "Effect": "Allow"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_role_policy" "asg-policy" {
+  name = "${var.customer_prefix}-${var.environment}-asg-policy"
+  role = "${aws_iam_role.asg-role.id}"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "sns:*"
+      ],
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_launch_configuration" "asg_launch" {
+  name                        = "${var.customer_prefix}-${var.environment}-lconf"
+  image_id                    = "${var.ami_id}"
+  instance_type               = "${var.instance_type}"
+  key_name                    = "${var.key_name}"
+  security_groups             = ["${var.security_group}"]
 }
 
 resource "aws_autoscaling_group" "asg" {
-  name                 = "${var.customer_prefix}-${var.environment}-autoscale"
-  max_size             = "${var.max_size}"
-  min_size             = "${var.min_size}"
-  desired_capacity     = "${var.desired}"
-  vpc_zone_identifier  = ["${var.subnet1_id}", "${var.subnet2_id}"]
-  launch_configuration = "${aws_launch_configuration.asg_launch.name}"
-  health_check_type    = "ELB"
-  termination_policies = ["NewestInstance"]
+  name                    = "${var.customer_prefix}-${var.environment}-${var.asg_type}"
+  max_size                = "${var.max_size}"
+  min_size                = "${var.min_size}"
+  desired_capacity        = "${var.desired}"
+  vpc_zone_identifier     = ["${var.public_subnet1_id}", "${var.public_subnet2_id}"]
+  launch_configuration    = "${aws_launch_configuration.asg_launch.id}"
+  termination_policies    = ["NewestInstance"]
+  target_group_arns       = ["${var.target_group_arns}"]
+  tags = [
+    {
+      key                 = "AutoScale Group Instance"
+      value               = "${var.customer_prefix}-${var.environment}"
+      propagate_at_launch = true
+    },
+    {
+      key                 = "Name"
+      value               = "${var.customer_prefix}-${var.environment}-asg-instance"
+      propagate_at_launch = true
+    }
+  ]
+  initial_lifecycle_hook {
+    name                    = "${var.customer_prefix}-${var.environment}-asg-initial-lch"
+    default_result          = "ABANDON"
+    heartbeat_timeout       = 3600
+    lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
+    notification_metadata   = "${var.public_subnet1_id}:${var.private_subnet1_id}:${var.public_subnet2_id}:${var.private_subnet2_id}"
+    notification_target_arn = "${var.topic_arn}"
+    role_arn                = "${aws_iam_role.asg-role.arn}"
+  }
 }
 
 resource "aws_autoscaling_policy" "scale-in-policy" {
-  name               = "${var.customer_prefix}-${var.environment}-autoscale-in-policy"
-  scaling_adjustment = -1
-  adjustment_type = "ChangeInCapacity"
+  name                   = "${var.customer_prefix}-${var.environment}-autoscale-in-policy"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
   autoscaling_group_name = "${aws_autoscaling_group.asg.name}"
 
 }
@@ -40,21 +112,21 @@ resource "aws_autoscaling_policy" "scale-out-policy" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
-  alarm_name          = "${var.customer_prefix}-${var.environment}-cpulo-alarm"
-  comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = "1"
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  period              = "300"
-  statistic           = "Average"
-  threshold           = "20"
+  alarm_name             = "${var.customer_prefix}-${var.environment}-cpulo-alarm"
+  comparison_operator    = "LessThanOrEqualToThreshold"
+  evaluation_periods     = "1"
+  metric_name            = "CPUUtilization"
+  namespace              = "AWS/EC2"
+  period                 = "300"
+  statistic              = "Average"
+  threshold              = "20"
 
   dimensions = {
     AutoScalingGroupName = "${aws_autoscaling_group.asg.name}"
   }
 
-  alarm_description = "This metric monitors ec2 cpu utilization"
-  alarm_actions     = ["${aws_autoscaling_policy.scale-in-policy.arn}"]
+  alarm_description      = "This metric monitors ec2 cpu utilization"
+  alarm_actions          = ["${aws_autoscaling_policy.scale-in-policy.arn}"]
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
@@ -78,20 +150,36 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
 resource "aws_autoscaling_notification" "asg-notification"{
   count                  = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
   group_names            = ["${aws_autoscaling_group.asg.name}"]
-  notifications          = [ "autoscaling:EC2_INSTANCE_LAUNCH",
-                             "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
-                             "autoscaling:EC2_INSTANCE_TERMINATE",
-                             "autoscaling:EC2_INSTANCE_TERMINATE_ERROR"
+  notifications          = [    "autoscaling:TEST_NOTIFICATION",
+                                "autoscaling:EC2_INSTANCE_LAUNCH",
+                                "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+                                "autoscaling:EC2_INSTANCE_TERMINATE",
+                                "autoscaling:EC2_INSTANCE_TERMINATE_ERROR"
   ]
   topic_arn              = "${var.topic_arn}"
 }
 
-resource "aws_autoscaling_lifecycle_hook" "asg-lch"{
-  count                  = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
-  name                   = "${var.customer_prefix}-${var.environment}-lch"
-  autoscaling_group_name = "${aws_autoscaling_group.asg.name}"
-  default_result         = "ABANDON"
-  heartbeat_timeout      = 500
-  lifecycle_transition = ""
+resource "aws_autoscaling_lifecycle_hook" "asg-launch-lch"{
+  count                   = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
+  name                    = "${var.customer_prefix}-${var.environment}-launch-lch"
+  autoscaling_group_name  = "${aws_autoscaling_group.asg.name}"
+  default_result          = "ABANDON"
+  heartbeat_timeout       = 3600
+  lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
+  notification_target_arn = "${var.topic_arn}"
+  role_arn                = "${aws_iam_role.asg-role.arn}"
+  notification_metadata   = "${var.public_subnet1_id}:${var.private_subnet1_id}:${var.public_subnet2_id}:${var.private_subnet2_id}"
+}
+
+
+resource "aws_autoscaling_lifecycle_hook" "asg-terminate-lch"{
+  count                   = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
+  name                    = "${var.customer_prefix}-${var.environment}-terminate-lch"
+  autoscaling_group_name  = "${aws_autoscaling_group.asg.name}"
+  default_result          = "ABANDON"
+  heartbeat_timeout       = "3600"
+  lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
+  notification_target_arn = "${var.topic_arn}"
+  role_arn                = "${aws_iam_role.asg-role.arn}"
 }
 

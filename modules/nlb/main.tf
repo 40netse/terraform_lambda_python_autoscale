@@ -32,13 +32,3 @@ resource "aws_lb_target_group" "nlb_target_group" {
     port = "541"
   }
 }
-
-resource "aws_lb_target_group_attachment" "nlb_target_group_attachment1" {
-  target_group_arn = "${aws_lb_target_group.nlb_target_group.arn}"
-  target_id = "${var.instance1_id}"
-}
-
-resource "aws_lb_target_group_attachment" "nlb_target_group_attachment2" {
-  target_group_arn = "${aws_lb_target_group.nlb_target_group.arn}"
-  target_id = "${var.instance2_id}"
-}

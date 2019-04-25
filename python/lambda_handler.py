@@ -1,5 +1,143 @@
 import json
 
 def handler(event, context):
-    print("MDW Received event: " + json.dumps(event, indent=2))
-    return event
+    """Endpoint that SNS accesses. Includes logic verifying request"""
+    print("Fortigate Autoscale Received context: %s", context)
+    print("Fortigate Autoscale Received event: " + json.dumps(event, indent=2))
+    #
+    # pylint: disable=too-many-return-statements,too-many-branches
+    #
+    # In order to 'hide' the endpoint, all non-POST requests should return
+    # the site's default HTTP404
+    #
+    if isinstance(request.body, str):
+        # requests return str in python 2.7
+        request_body = request.body
+    try:
+        data = json.loads(request_body)
+    except ValueError:
+        const.logger.exception('sns(): Notification Not Valid JSON: {}'.format(request_body))
+        return HttpResponseBadRequest('Not Valid JSON')
+    const.logger.debug("sns(): request = %s" % (json.dumps(request.body, sort_keys=True, indent=4, separators=(',', ': '))))
+
+    if 'TopicArn' not in data:
+        return HttpResponseBadRequest('Not Valid JSON')
+    url = None
+    if 'HTTP_HOST' in request.META:
+        url = 'https://' + request.META['HTTP_HOST']
+
+    #
+    # Handle Subscription Request up front. The first Subscription request will trigger a DynamoDB table creation
+    # and it will not be responded to. The second request will have an ACTIVE table and the subscription request
+    # will be responded to and start the flow of Autoscale Messages.
+    #
+    if request.method == 'POST' and data['Type'] == 'SubscriptionConfirmation':
+        const.logger.info('SubscriptionConfirmation()')
+        g = AutoScaleGroup(data)
+        const.logger.debug('SubscriptionConfirmation 1(): g = %s' % g)
+        #
+        # Create the master table if it does not exist. Master table is just a list of autoscale group names.
+        # The master table is named "fortinet_autoscale_<region>_<account_id>.
+        # The scheduled cloudwatch process will read the master table every 60 seconds and execute
+        # all the housekeeping functions for each managed autoscale group.
+        #
+        master_table_found = False
+        master_table_name = "fortinet_autoscale_" + g.region + "_" + g.account
+        try:
+            t = g.db_client.describe_table(TableName=master_table_name)
+            if 'ResponseMetadata' in t:
+                if t['ResponseMetadata']['HTTPStatusCode'] == const.STATUS_OK:
+                    master_table_found = True
+        except g.db_client.exceptions.ResourceNotFoundException:
+            master_table_found = False
+        if master_table_found is False:
+            try:
+                g.db_client.create_table(AttributeDefinitions=const.attribute_definitions,
+                                            TableName=master_table_name, KeySchema=const.schema,
+                                            ProvisionedThroughput=const.provisioned_throughput)
+            except Exception, ex:
+                const.logger.debug('SubscriptionConfirmation master_table_create(): table_status = %s' % ex)
+                return
+        mt = g.db_resource.Table(master_table_name)
+        asg = {"Type": const.TYPE_AUTOSCALE_GROUP, "TypeId": g.name}
+        master_table_written = False
+        while master_table_written is False:
+            try:
+                mt.put_item(Item=asg)
+                master_table_written = True
+            except g.db_client.exceptions.ResourceNotFoundException:
+                master_table_written = False
+                time.sleep(5)
+        #
+        # End of master table
+        #
+        r = None
+        try:
+            r = g.db_client.describe_table(TableName=g.name)
+        except Exception, ex:
+            table_status = 'NOTFOUND'
+
+        if r is not None and 'Table' in r:
+            table_status = r['Table']['TableStatus']
+
+        const.logger.debug('SubscriptionConfirmation 2(): table_status = %s' % table_status)
+        #
+        # If NOTFOUND, fall through to write_to_db() and it will create the table
+        #
+        if table_status == 'NOTFOUND':
+            pass
+        #
+        # If ACTIVE and we received a new Subscription Confirmation, delete everything in the table and start over
+        #
+        elif table_status == 'ACTIVE':
+            table = g.db_resource.Table(g.name)
+            response = table.scan()
+            if 'Items' in response:
+                for r in response['Items']:
+                    table.delete_item(Key={"Type": r['Type'], "TypeId": r['TypeId']})
+        #
+        # If CREATING, this is the second Subscription Confirmation and AWS is still busy creating the table
+        #   just ignore this request
+        elif table_status == 'CREATING':
+            return
+        else:
+            #
+            # Unknown status. 404
+            #
+            raise Http404
+
+        const.logger.debug('SubscriptionConfirmation pre write_to_db()')
+        g.write_to_db(data, url)
+
+        const.logger.debug('SubscriptionConfirmation post write_to_db(): g.status = %s' % g.status)
+        if g.status == 'CREATING':
+            return
+        if g.asg is None:
+            raise Http404
+
+        if g.status == 'ACTIVE':
+            const.logger.info('SubscriptionConfirmation respond_to_subscription request()')
+            return respond_to_subscription_request(request)
+
+    #
+    # Handle the following NOTIFICATION TYPES: TEST, EC2_LCH_Launch, EC2_Launch, EC2_LCH_Terminate, EC2_Terminate
+    #
+    if request.method == 'POST' and 'Type' in data and data['Type'] == 'Notification':
+        #
+        # if this is a TEST_NOTIFICATION, just respond 200. Autoscale group is likely in te process of being created
+        #
+        if 'Message' in data:
+            try:
+                msg = json.loads(data['Message'])
+            except ValueError:
+                const.logger.exception('sns(): Notification Not Valid JSON: {}'.format(data['Message']))
+                return HttpResponseBadRequest('Not Valid JSON')
+            if 'Event' in msg and msg['Event'] == 'autoscaling:TEST_NOTIFICATION':
+                return HttpResponse(0)
+            g = AutoScaleGroup(data)
+            g.write_to_db(data, url)
+            if g.asg is None:
+                raise Http404
+            g.process_notification(data)
+            return HttpResponse(0)
+
