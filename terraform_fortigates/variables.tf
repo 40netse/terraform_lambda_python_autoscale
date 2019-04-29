@@ -61,9 +61,6 @@ variable "instance_type" {
 variable "public_ip" {
   description = "Associate Public IP Address"
 }
-variable "sns_notification_url" {
-  description = "URL for SNS to send Autoscale Notifications"
-}
 variable "autoscale_notifications_needed" {
   description = "Boolean to tell module if autoscale notifications are needed"
 }

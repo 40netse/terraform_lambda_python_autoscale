@@ -56,7 +56,7 @@ module "fgt-sns" {
   sns_topic                      = "${var.sns_topic}"
   environment                    = "${var.environment}"
   customer_prefix                = "${var.customer_prefix}"
-  notification_url               = "${module.apigateway.base_url}"
+  notification_url               = "${module.apigateway.base_url}/${module.ec2-asg.name}"
 
 }
 
