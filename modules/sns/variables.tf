@@ -16,6 +16,6 @@ variable "environment" {
   description = "The Tag Environment SNS tag"
 }
 
-variable "notification_arn" {
-  description = "Notification ARN for SNS message delivery"
+variable "notification_url" {
+  description = "Notification URL for SNS message delivery"
 }

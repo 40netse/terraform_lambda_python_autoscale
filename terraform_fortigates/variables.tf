@@ -61,12 +61,24 @@ variable "instance_type" {
 variable "public_ip" {
   description = "Associate Public IP Address"
 }
+variable "sns_notification_url" {
+  description = "URL for SNS to send Autoscale Notifications"
+}
 variable "autoscale_notifications_needed" {
-  description = "autoscale notifications needed true/false"
+  description = "Boolean to tell module if autoscale notifications are needed"
 }
 variable "sg_name" {
   description = "Security Group Name for EC2 instances"
 }
 variable "sns_topic" {
   description = "SNS Topic"
+}
+variable "dns_domain" {
+  description = "DNS Domain to attach to API Gateway"
+}
+variable "certificate_arn" {
+  description = "Certificate ARN for Custom DNS Name"
+}
+variable "custom_host_name" {
+  description = "Host portion of custom DNS Name for API Gateway"
 }

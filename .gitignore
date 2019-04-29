@@ -8,4 +8,5 @@
 **/terraform.tfvars
 **/site-packages
 build/*
+test/*
 terraform

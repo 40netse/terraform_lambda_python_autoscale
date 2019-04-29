@@ -7,19 +7,9 @@ provider "aws" {
 data "template_file" "web_userdata" {
   template = "${file("${var.userdata}")}"
 }
-/*
-resource "aws_launch_configuration" "asg_launch" {
-  name                        = "${var.customer_prefix}-${var.environment}-lconf"
-  image_id                    = "${var.ami_id}"
-  instance_type               = "${var.instance_type}"
-  key_name                    = "${var.key_name}"
-  security_groups             = ["${var.security_group}"]
-  user_data                   = "${data.template_file.web_userdata.rendered}"
-  associate_public_ip_address = true
-}
-*/
+
 resource "aws_iam_role" "asg-role" {
-  name = "${var.customer_prefix}-${var.environment}-asg-role"
+
   assume_role_policy = <<EOF
 {
   "Version": "2012-10-17",
