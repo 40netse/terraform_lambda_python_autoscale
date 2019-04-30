@@ -43,6 +43,4 @@ variable "public_ip" {
 variable "sg_name" {
   description = "Security Group Name for EC2 instances"
 }
-variable "autoscale_notifications_needed" {
-  description = "autoscale notifications needed true/false"
-}
+

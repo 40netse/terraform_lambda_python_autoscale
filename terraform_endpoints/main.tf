@@ -40,16 +40,15 @@ module "ec2-sg" {
 }
 
 module "ec2-asg" {
-  source = "../modules/autoscale"
+  source = "../modules/endpoints_autoscale"
   access_key                     = "${var.access_key}"
   secret_key                     = "${var.secret_key}"
   aws_region                     = "${var.aws_region}"
   vpc_id                         = "${var.vpc_id}"
-  asg_type                       = "endpoint"
   instance_type                  = "${var.instance_type}"
   ami_id                         = "${data.aws_ami.ubuntu.id}"
-  subnet1_id                     = "${var.private1_subnet_id}"
-  subnet2_id                     = "${var.private2_subnet_id}"
+  private1_subnet_id             = "${var.private1_subnet_id}"
+  private2_subnet_id             = "${var.private2_subnet_id}"
   security_group                 = "${module.ec2-sg.id}"
   key_name                       = "${var.keypair}"
   max_size                       = "${var.max_size}"
@@ -57,10 +56,8 @@ module "ec2-asg" {
   desired                        = "${var.desired}"
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
-  autoscale_notifications_needed = "${var.autoscale_notifications_needed}"
   target_group_arns              = "${module.alb.target_group_arns}"
-  userdata                       = "${path.cwd}/web-userdata.tpl"
-  topic_arn                      = ""
+  userdata                       = "${path.cwd}/endpoint-userdata.tpl"
 }
 
 module "alb" {

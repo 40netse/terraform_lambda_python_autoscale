@@ -46,7 +46,7 @@ EOF
 }
 
 resource "aws_launch_configuration" "asg_launch" {
-  name                        = "${var.customer_prefix}-${var.environment}-lconf"
+  name                        = "${var.customer_prefix}-${var.environment}-fgt-lconf"
   image_id                    = "${var.ami_id}"
   instance_type               = "${var.instance_type}"
   key_name                    = "${var.key_name}"
@@ -54,7 +54,7 @@ resource "aws_launch_configuration" "asg_launch" {
 }
 
 resource "aws_autoscaling_group" "asg" {
-  name                    = "${var.customer_prefix}-${var.environment}-${var.asg_type}"
+  name                    = "${var.customer_prefix}-${var.environment}-fgt"
   max_size                = "${var.max_size}"
   min_size                = "${var.min_size}"
   desired_capacity        = "${var.desired}"
@@ -138,7 +138,6 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
 }
 
 resource "aws_autoscaling_notification" "asg-notification"{
-  count                  = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
   group_names            = ["${aws_autoscaling_group.asg.name}"]
   notifications          = [    "autoscaling:TEST_NOTIFICATION",
                                 "autoscaling:EC2_INSTANCE_LAUNCH",
@@ -150,7 +149,6 @@ resource "aws_autoscaling_notification" "asg-notification"{
 }
 
 resource "aws_autoscaling_lifecycle_hook" "asg-launch-lch"{
-  count                   = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
   name                    = "${var.customer_prefix}-${var.environment}-launch-lch"
   autoscaling_group_name  = "${aws_autoscaling_group.asg.name}"
   default_result          = "ABANDON"
@@ -163,7 +161,6 @@ resource "aws_autoscaling_lifecycle_hook" "asg-launch-lch"{
 
 
 resource "aws_autoscaling_lifecycle_hook" "asg-terminate-lch"{
-  count                   = "${var.autoscale_notifications_needed == "true" ? 1 : 0}"
   name                    = "${var.customer_prefix}-${var.environment}-terminate-lch"
   autoscaling_group_name  = "${aws_autoscaling_group.asg.name}"
   default_result          = "ABANDON"

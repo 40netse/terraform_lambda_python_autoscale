@@ -23,10 +23,6 @@ resource "aws_api_gateway_method" "proxy_root" {
   resource_id   = "${aws_api_gateway_resource.resource.id}"
   http_method   = "ANY"
   authorization = "NONE"
-
-  #request_parameters = {
-  #  "method.request.path.proxy" = true
-  #}
 }
 
 resource "aws_api_gateway_deployment" "deploy" {
@@ -56,35 +52,3 @@ resource "aws_lambda_permission" "apigw" {
   # within the API Gateway "REST API".
   source_arn = "${aws_api_gateway_deployment.deploy.execution_arn}/*/*"
 }
-/*
-resource "aws_api_gateway_base_path_mapping" "mapping" {
-  api_id                       = "${aws_api_gateway_rest_api.api.id}"
-  stage_name                   = "${aws_api_gateway_deployment.deploy.stage_name}"
-  domain_name                  = "${aws_api_gateway_domain_name.domain.domain_name}"
-  base_path                    = "${aws_api_gateway_resource.resource.path_part}"
-}
-
-
-resource "aws_api_gateway_domain_name" "domain" {
-  domain_name                 = "${var.custom_host_name}.${var.dns_domain}"
-  regional_certificate_arn    = "${var.certificate_arn}"
-  endpoint_configuration {
-    types = ["REGIONAL"]
-  }
-}
-
-data "aws_route53_zone" "main" {
-  name                        = "${var.dns_domain}"
-}
-
-resource "aws_route53_record" "record" {
-  zone_id                     = "${data.aws_route53_zone.main.id}"
-  name                        = "${aws_api_gateway_domain_name.domain.domain_name}"
-  type                        = "A"
-  alias {
-    name                      = "${aws_api_gateway_domain_name.domain.regional_domain_name}"
-    zone_id                   = "${aws_api_gateway_domain_name.domain.regional_zone_id}"
-    evaluate_target_health    = true
-  }
-}
-*/

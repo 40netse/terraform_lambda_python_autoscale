@@ -78,7 +78,6 @@ module "ec2-asg" {
   access_key                     = "${var.access_key}"
   secret_key                     = "${var.secret_key}"
   aws_region                     = "${var.aws_region}"
-  asg_type                       = "fortigate"
   vpc_id                         = "${var.vpc_id}"
   instance_type                  = "${var.instance_type}"
   ami_id                         = "${data.aws_ami.fortigate.id}"
@@ -91,8 +90,7 @@ module "ec2-asg" {
   max_size                       = "${var.max_size}"
   min_size                       = "${var.min_size}"
   desired                        = "${var.desired}"
-  userdata                       = "${path.cwd}/web-userdata.tpl"
-  autoscale_notifications_needed = "${var.autoscale_notifications_needed}"
+  userdata                       = "${path.cwd}/fortigate-userdata.tpl"
   topic_arn                      = "${module.fgt-sns.arn}"
   target_group_arns              = "${module.nlb.target_group_arns}"
   customer_prefix                = "${var.customer_prefix}"
@@ -107,9 +105,7 @@ module "apigateway" {
   customer_prefix                = "${var.customer_prefix}"
   lambda_invoke_arn              = "${module.lambda-autoscale.lambda_invoke_arn}"
   environment                    = "${var.environment}"
-  dns_domain                     = "${var.dns_domain}"
   lambda_function_name           = "${module.lambda-autoscale.lambda_function_name}"
   certificate_arn                = "${var.certificate_arn}"
-  custom_host_name               = "${var.custom_host_name}"
 }
 

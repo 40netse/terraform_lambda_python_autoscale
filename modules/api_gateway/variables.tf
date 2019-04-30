@@ -16,15 +16,9 @@ variable "environment" {
 variable "lambda_invoke_arn" {
   description = "The Lambda function ARN to be used by the API Gateway"
 }
-variable "dns_domain" {
-  description = "DNS domain name to attach to API Gateway"
-}
 variable "lambda_function_name" {
   description = "lambda function name that API gateway should invoke"
 }
 variable "certificate_arn" {
   description = "Certificate ARN for custom DNS Name "
-}
-variable "custom_host_name" {
-  description = "Host portion of custom DNS Name for API Gateway"
 }
