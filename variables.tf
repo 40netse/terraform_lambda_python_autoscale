@@ -78,6 +78,3 @@ variable "public_ip" {
 variable "sns_topic" {
   description = "SNS Topic"
 }
-variable "certificate_arn" {
-  description = "Certificate ARN for Custom DNS Name"
-}

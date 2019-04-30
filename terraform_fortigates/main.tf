@@ -106,6 +106,5 @@ module "apigateway" {
   lambda_invoke_arn              = "${module.lambda-autoscale.lambda_invoke_arn}"
   environment                    = "${var.environment}"
   lambda_function_name           = "${module.lambda-autoscale.lambda_function_name}"
-  certificate_arn                = "${var.certificate_arn}"
 }
 

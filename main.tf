@@ -70,5 +70,4 @@ module "fortigates" {
   public_ip                  = "${var.public_ip}"
   sg_name                    = "fgt"
   sns_topic                  = "${var.sns_topic}"
-  certificate_arn            = "${var.certificate_arn}"
 }

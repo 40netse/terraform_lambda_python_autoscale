@@ -23,5 +23,5 @@ lambda_handler             = "lambda_handler.handler"
 lambda_runtime             = "python2.7"
 lambda_package_path        = "./build/functions.zip"
 sns_topic                  = "fgtautoscale-sns"
-certificate_arn            = " arn:aws:acm:us-east-1:730386877786:certificate/88ff4e36-95c2-435c-a9a4-581acf12f037"
+
 

@@ -19,6 +19,3 @@ variable "lambda_invoke_arn" {
 variable "lambda_function_name" {
   description = "lambda function name that API gateway should invoke"
 }
-variable "certificate_arn" {
-  description = "Certificate ARN for custom DNS Name "
-}
