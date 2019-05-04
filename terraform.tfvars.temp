@@ -18,7 +18,7 @@ cidr_for_access            = "0.0.0.0/0"
 endpoint_instance_type     = "t2.micro"
 public_ip                  = true
 sns_topic                  = "fgtautoscale-sns"
-api_gateway_url            = "https://sdowbrp2bg.execute-api.us-east-1.amazonaws.com/dev/sns"
+api_gateway_url            = "API_GATEWAY_URL"
 
 
 

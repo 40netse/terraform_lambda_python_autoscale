@@ -49,11 +49,6 @@ module "fortigates" {
   access_key                 = "${var.access_key}"
   secret_key                 = "${var.secret_key}"
   aws_region                 = "${var.aws_region}"
-  lambda_name                = "${var.lambda_name}"
-  lambda_description         = "${var.lambda_description}"
-  lambda_handler             = "${var.lambda_handler}"
-  lambda_runtime             = "${var.lambda_runtime}"
-  lambda_package_path        = "${var.lambda_package_path}"
   vpc_id                     = "${module.vpc.vpc_id}"
   public1_subnet_id          = "${module.vpc.public1_subnet_id}"
   public2_subnet_id          = "${module.vpc.public2_subnet_id}"
@@ -70,4 +65,5 @@ module "fortigates" {
   public_ip                  = "${var.public_ip}"
   sg_name                    = "fgt"
   sns_topic                  = "${var.sns_topic}"
+  api_gateway_url            = "${var.api_gateway_url}"
 }

@@ -1,0 +1,14 @@
+{
+    "dev": {
+        "keep_warm": false,
+        "debug": false,
+        "log_level": "DEBUG",
+        "aws_region": "us-east-1",
+        "django_settings": "autoscale.settings",
+        "profile_name": "default",
+        "project_name": "autoscale",
+        "runtime": "python3.7",
+        "slim_handler": true,
+        "s3_bucket": "mdw-autoscale"
+    }
+}

@@ -5,21 +5,6 @@ variable "aws_region" {
   description = "The AWS region to use"
   default = "us-east-1"
 }
-variable "lambda_name" {
-  description = "Lambda function for Fortigate Autoscaling"
-}
-variable "lambda_description" {
-  description = "Fortigate Autoscale Lambda Function"
-}
-variable "lambda_handler" {
-  description = "Lambda handler function"
-}
-variable "lambda_runtime" {
-  description = "Runtime for the lambda function"
-}
-variable "lambda_package_path" {
-  description = "Path to lambda zip file"
-}
 variable "customer_prefix" {
   description = "Customer Prefix to apply to all resources"
 }
@@ -77,4 +62,7 @@ variable "public_ip" {
 }
 variable "sns_topic" {
   description = "SNS Topic"
+}
+variable "api_gateway_url" {
+  description = "API Gateway URL"
 }

@@ -20,15 +20,6 @@ data "aws_ami" "fortigate" {
   owners                         = ["679593333241"] # Canonical
 }
 
-module "lambda-autoscale" {
-  source                         = "../modules/lambda"
-  name                           = "${var.lambda_name}"
-  description                    = "${var.lambda_description}"
-  handler                        = "${var.lambda_handler}"
-  runtime                        = "${var.lambda_runtime}"
-  package_path                   = "${path.cwd}/${var.lambda_package_path}"
-}
-
 module "ec2-sg" {
   source                         = "../modules/security_group"
   access_key                     = "${var.access_key}"
@@ -56,7 +47,7 @@ module "fgt-sns" {
   sns_topic                      = "${var.sns_topic}"
   environment                    = "${var.environment}"
   customer_prefix                = "${var.customer_prefix}"
-  notification_url               = "${module.apigateway.base_url}/${module.ec2-asg.name}"
+  notification_url               = "${var.api_gateway_url}"
 
 }
 
@@ -97,14 +88,4 @@ module "ec2-asg" {
   environment                    = "${var.environment}"
 }
 
-module "apigateway" {
-  source = "../modules/api_gateway"
-  access_key                     = "${var.access_key}"
-  secret_key                     = "${var.secret_key}"
-  aws_region                     = "${var.aws_region}"
-  customer_prefix                = "${var.customer_prefix}"
-  lambda_invoke_arn              = "${module.lambda-autoscale.lambda_invoke_arn}"
-  environment                    = "${var.environment}"
-  lambda_function_name           = "${module.lambda-autoscale.lambda_function_name}"
-}
 
