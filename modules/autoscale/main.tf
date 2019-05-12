@@ -51,10 +51,12 @@ resource "aws_launch_configuration" "asg_launch" {
   instance_type               = "${var.instance_type}"
   key_name                    = "${var.key_name}"
   security_groups             = ["${var.security_group}"]
+  associate_public_ip_address = true
+  user_data = "${data.template_file.web_userdata.rendered}"
 }
 
 resource "aws_autoscaling_group" "asg" {
-  name                    = "${var.customer_prefix}-${var.environment}-fgt"
+  name                    = "${var.customer_prefix}-${var.environment}-fgt-autoscale"
   max_size                = "${var.max_size}"
   min_size                = "${var.min_size}"
   desired_capacity        = "${var.desired}"
@@ -62,6 +64,26 @@ resource "aws_autoscaling_group" "asg" {
   launch_configuration    = "${aws_launch_configuration.asg_launch.id}"
   termination_policies    = ["NewestInstance"]
   target_group_arns       = ["${var.target_group_arns}"]
+  initial_lifecycle_hook {
+      name                    = "${var.customer_prefix}-${var.environment}-fgt-launch-lch"
+      default_result          = "ABANDON"
+      heartbeat_timeout       = 240
+      lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
+      notification_target_arn = "${var.topic_arn}"
+      role_arn                = "${aws_iam_role.asg-role.arn}"
+      notification_metadata   = "${var.public_subnet1_id}:${var.private_subnet1_id}:${var.public_subnet2_id}:${var.private_subnet2_id}"
+  }
+
+
+  initial_lifecycle_hook {
+      name                    = "${var.customer_prefix}-${var.environment}-fgt-terminate-lch"
+      default_result          = "ABANDON"
+      heartbeat_timeout       = 240
+      lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
+      notification_target_arn = "${var.topic_arn}"
+      role_arn                = "${aws_iam_role.asg-role.arn}"
+  }
+
   tags = [
     {
       key                 = "AutoScale Group Instance"
@@ -74,15 +96,6 @@ resource "aws_autoscaling_group" "asg" {
       propagate_at_launch = true
     }
   ]
-  initial_lifecycle_hook {
-    name                    = "${var.customer_prefix}-${var.environment}-asg-initial-lch"
-    default_result          = "ABANDON"
-    heartbeat_timeout       = 3600
-    lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
-    notification_metadata   = "${var.public_subnet1_id}:${var.private_subnet1_id}:${var.public_subnet2_id}:${var.private_subnet2_id}"
-    notification_target_arn = "${var.topic_arn}"
-    role_arn                = "${aws_iam_role.asg-role.arn}"
-  }
 }
 
 resource "aws_autoscaling_policy" "scale-in-policy" {
@@ -147,26 +160,3 @@ resource "aws_autoscaling_notification" "asg-notification"{
   ]
   topic_arn              = "${var.topic_arn}"
 }
-
-resource "aws_autoscaling_lifecycle_hook" "asg-launch-lch"{
-  name                    = "${var.customer_prefix}-${var.environment}-launch-lch"
-  autoscaling_group_name  = "${aws_autoscaling_group.asg.name}"
-  default_result          = "ABANDON"
-  heartbeat_timeout       = 3600
-  lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
-  notification_target_arn = "${var.topic_arn}"
-  role_arn                = "${aws_iam_role.asg-role.arn}"
-  notification_metadata   = "${var.public_subnet1_id}:${var.private_subnet1_id}:${var.public_subnet2_id}:${var.private_subnet2_id}"
-}
-
-
-resource "aws_autoscaling_lifecycle_hook" "asg-terminate-lch"{
-  name                    = "${var.customer_prefix}-${var.environment}-terminate-lch"
-  autoscaling_group_name  = "${aws_autoscaling_group.asg.name}"
-  default_result          = "ABANDON"
-  heartbeat_timeout       = "3600"
-  lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
-  notification_target_arn = "${var.topic_arn}"
-  role_arn                = "${aws_iam_role.asg-role.arn}"
-}
-

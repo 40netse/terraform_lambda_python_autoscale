@@ -2,6 +2,7 @@
 import logging
 
 STATUS_OK = 200
+STATUS_NOT_OK = 100
 
 #
 # DynamoDB attributes for creating the DB
@@ -20,4 +21,5 @@ provisioned_throughput = {'ReadCapacityUnits': 5, 'WriteCapacityUnits': 5}
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
+

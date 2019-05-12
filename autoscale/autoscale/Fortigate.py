@@ -50,6 +50,7 @@ class Fortigate(object):
 
         if 'LifecycleActionToken' in self.msg:
             self.lch_token = self.msg['LifecycleActionToken']
+            logger.info("Fortigate init(): token = %s" % self.lch_token)
         if 'LifecycleTransition' in self.msg:
             self.lch_transition = self.msg['LifecycleTransition']
         if 'LifecycleHookName' in self.msg:
@@ -93,7 +94,7 @@ class Fortigate(object):
             try:
                 self.s3_client.download_fileobj(bucket, path, content)
             except Exception as ex:
-                logger.exception("caught: %s with config_firewall(): ex = %s" % ex.message)
+                logger.exception("caught: %s with config_firewall(): ex = %s" % ex)
                 return
         fd = open(fp.name, 'r')
         cfg = fd.read()
@@ -148,7 +149,7 @@ class Fortigate(object):
         try:
             instances = self.ec2_client.describe_instances(InstanceIds=[self.instance_id])
         except Exception as ex:
-            logger.exception("Fortigate.exception(): message = %s, instance = %s" % (ex.message, self.instance_id))
+            logger.exception("Fortigate.exception(): message = %s, instance = %s" % (ex, self.instance_id))
             return
         if 'ResponseMetadata' not in instances or instances['ResponseMetadata']['HTTPStatusCode'] != STATUS_OK:
             return
@@ -189,10 +190,11 @@ class Fortigate(object):
         #
         # Describe the network interface and see if it is "available"
         #
+        logger.info("delete_second_interface(): eni = %s" % item['ENIId'])
         try:
             r = self.ec2_client.describe_network_interfaces(NetworkInterfaceIds=[item['ENIId']])
         except Exception as ex:
-            logger.exception("describe_network_interface(): message = %s" % ex.message)
+            logger.exception("describe_network_interface(): message = %s" % ex)
             #
             # If the ENI is not there, delete the info from the database so we don't try this again.
             #
@@ -205,6 +207,7 @@ class Fortigate(object):
             # If the ENI is no longer attached (i.e. 'available'), delete it. Also, respond to the lifecycle event
             # and allow the instance to change state to "Proceed:terminate"
             if i['Status'] == 'available':
+                logger.info("delete_second_interface(): eni = %s is available" % item['ENIId'])
                 self.ec2_client.delete_network_interface(NetworkInterfaceId=item['ENIId'])
                 self.lch_action('CONTINUE')
                 try:
@@ -212,7 +215,7 @@ class Fortigate(object):
                                   Key={"Type": TYPE_ENI_ID, "TypeId": item['ENIId']})
                 except Exception as ex:
                     logger.exception("delete_second_interface(): message = %s, instance = %s" %
-                                     (ex.message, self.instance_id))
+                                     (ex, self.instance_id))
         return
 
     #
@@ -234,7 +237,7 @@ class Fortigate(object):
             try:
                 r = self.ec2_client.detach_network_interface(AttachmentId=attachment_id, Force=True)
             except Exception as ex:
-                logger.exception("detach_network_interface(): message = %s" % ex.message)
+                logger.exception("detach_network_interface(): message = %s" % ex)
                 return
             if r is None:
                 return
@@ -260,7 +263,11 @@ class Fortigate(object):
                                         Tags=[{'Key': 'Fortinet-Autoscale', 'Value': 'Master'}])
             logger.info('posting auto-scale config: {}' .format(data))
             self.api = FortiOSAPI()
-            self.api.login(self.ec2['PublicIpAddress'], 'admin', self.instance_id)
+            try:
+                self.api.login(self.ec2['PublicIpAddress'], 'admin', self.instance_id)
+            except Exception as ex:
+                logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
+                return
             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
             logger.info('restapi response: {}' .format(content))
             self.api.logout()
@@ -280,8 +287,7 @@ class Fortigate(object):
             try:
                 self.api.login(self.ec2['PublicIpAddress'], 'admin', self.instance_id)
             except Exception as ex:
-                logger.exception("login.exception(): message = %s, instance = %s" %
-                                 (ex.message, self.instance_id))
+                logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
                 return
             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
             logger.info('restapi response: {}' .format(content))
@@ -293,13 +299,14 @@ class Fortigate(object):
         # If no interface information, this instance is messed up and needs to be ABANDONED
         #
         if 'NetworkInterfaces' not in self.ec2:
-            self.lch_action('ABANDON')
+            logger.info("attach_second_interface(): ABANDON")
             return
         #
         # This is just a second request for this instance and second interface has already been added
         # Just respond OK and keep going. No need to ABANDON or CONTINUE
         #
         if len(self.ec2['NetworkInterfaces']) == 2:
+            logger.info("attach_second_interface(): two interfaces found")
             return
         #
         # Something is wrong with the metadata. Check the cloudformation template or terraform.
@@ -314,6 +321,7 @@ class Fortigate(object):
         nic = self.ec2_client.create_network_interface(Groups=[self.sg],
                                                        SubnetId=self.private_subnet_id,
                                                        Description='Second Network Interface')
+        logger.info("create_network_interface(): nic = %s" % nic)
 
         #
         # Something bad happened in the create. ABANDON
@@ -329,6 +337,7 @@ class Fortigate(object):
         #
         if snic is None:
             self.lch_action('ABANDON')
+        logger.info("ec2_resource(): snic = %s" % snic)
         #
         # TODO: May want to add delete on termination attribute to second interface
         # for now, it's easier to LCH_TERMINATION without it
@@ -342,7 +351,7 @@ class Fortigate(object):
                                                          InstanceId=self.instance_id, DeviceIndex=1)
         except Exception as ex:
             logger.exception("attach_network_interface(): message = %s, instance = %s"
-                             % (ex.message, self.instance_id))
+                             % (ex, self.instance_id))
             self.ec2_client.delete_network_interface(NetworkInterfaceId=self.second_nic_id)
             return None
 
@@ -359,12 +368,16 @@ class Fortigate(object):
         self.ec2_client.create_tags(Resources=[nic_id], Tags=[{'Key': 'Name', 'Value': name1}])
         nic_id = self.ec2['NetworkInterfaces'][1]['NetworkInterfaceId']
         self.ec2_client.create_tags(Resources=[nic_id], Tags=[{'Key': 'Name', 'Value': name2}])
-        t = self.auto_scale_group.table
-        self.auto_scale_group.asg = {"Type": TYPE_ENI_ID, "TypeId": self.second_nic_id,
-                                     "AutoScaleGroupName": self.auto_scale_group.name,
-                                     "LifecycleHookName": self.lch_name, "LifecycleToken": self.lch_token,
-                                     "ENIId": self.second_nic_id}
-        t.put_item(Item=self.auto_scale_group.asg)
+        #
+        # This was there because FortiOS < 6.0.4 required a reboot before the NIC was recognized
+        # That is not the case any longer
+        # t = self.auto_scale_group.table
+        # self.auto_scale_group.asg = {"Type": TYPE_ENI_ID, "TypeId": self.second_nic_id,
+        #                              "AutoScaleGroupName": self.auto_scale_group.name,
+        #                              "LifecycleHookName": self.lch_name, "LifecycleToken": self.lch_token,
+        #                              "ENIId": self.second_nic_id}
+        # t.put_item(Item=self.auto_scale_group.asg)
+        self.lch_action('CONTINUE')
         return STATUS_OK
 
     #
@@ -380,6 +393,6 @@ class Fortigate(object):
                                                                        LifecycleActionResult=action)
         except Exception as ex:
             logger.exception("complete_life_cycle_action(): message = %s, instance = %s" %
-                             (ex.message, self.instance_id))
+                             (ex, self.instance_id))
             pass
         return

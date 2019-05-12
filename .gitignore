@@ -1,5 +1,7 @@
 # Created by .ignore support plugin (hsz.mobi)
 **/.idea
+**/__pycache__
+autoscale/autoscale/*.pyc
 **/hold
 **/venv
 **/.terraform
@@ -9,3 +11,5 @@
 build/*
 test/*
 terraform
+fgtautoscale
+manage.py

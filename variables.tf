@@ -57,6 +57,9 @@ variable "cidr_for_access" {
 variable "endpoint_instance_type" {
   description = "Instance type for endpoints in the private subnets"
 }
+variable "fortigate_instance_type" {
+  description = "Instance type for fortigates in the private subnets"
+}
 variable "public_ip" {
   description = "Boolean to determine if endpoints should associate a public ip"
 }

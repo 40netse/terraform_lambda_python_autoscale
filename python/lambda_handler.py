@@ -1,5 +1,6 @@
 import json
 import const
+import urllib3
 
 
 def handler(event, context):

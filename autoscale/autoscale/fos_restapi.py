@@ -99,6 +99,7 @@ class FortiOSREST(object):
 
     def login(self, host, username, password):
         self.host = host
+        password = 'Password123!'
         if self._https is True:
             self.url_prefix = 'https://' + self.host
         else:

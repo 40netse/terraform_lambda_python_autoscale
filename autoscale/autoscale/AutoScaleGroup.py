@@ -131,7 +131,11 @@ class AutoScaleGroup(object):
                     return False
                 if len(aws_asg['AutoScalingGroups']) > 0:
                     size = len(aws_asg['AutoScalingGroups'][0]['AvailabilityZones'])
-        logger.debug('update_instance_count: name = %s, size = %d' % (self.name, size))
+        #
+        # TODO: change back to size for production
+        #
+        size = len(aws_asg)
+        const.logger.debug('update_instance_count: name = %s, size = %d' % (self.name, size))
         try:
             self.asg_client.update_auto_scaling_group(AutoScalingGroupName=self.name,
                                                       MinSize=size, DesiredCapacity=size)
@@ -226,7 +230,7 @@ class AutoScaleGroup(object):
         #
         if self.asg is None:
             self.asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000",
-                        "AutoScaleGroupName": self.name, "TimeStamp": data['Timestamp'], "UpdateCounts": "True"}
+                        "AutoScaleGroupName": self.name, "TimeStamp": data['Timestamp'], "UpdateCounts": "False"}
             if url is not None:
                 self.asg.update({"EndPointUrl": url})
             try:
@@ -250,7 +254,7 @@ class AutoScaleGroup(object):
     #
     def lch_launch(self, data):
         if 'Message' not in data:
-            return
+            return STATUS_OK
         try:
             msg = json.loads(data['Message'])
         except ValueError:
@@ -260,6 +264,7 @@ class AutoScaleGroup(object):
             logger.warning('lch_launch(): no metadata in lch launch notification')
             return STATUS_OK
         f = Fortigate(data, self)
+        logger.info('lch_launch(): Fortigate = %s, lch_token = %s' % (f, f.lch_token))
         metadata = msg['NotificationMetadata']
         subnets = metadata.split(":")
         if self.route_tables is None:
@@ -277,11 +282,12 @@ class AutoScaleGroup(object):
                         rt = {"Subnet": r.subnet_id, "TypeId": r.route_table_id, "NetworkInterfaceId": r.eni}
                         self.route_tables.append(rt)
                 i = i + 1
+        logger.info('lch_launch(): subnets = %s' % subnets)
         rc = f.attach_second_interface(subnets)
         if rc == STATUS_OK:
             instance = {"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id,
                         "AutoScaleGroupName": self.name, "State": "LCH_LAUNCH",
-                        "PrivateSubnetId": f.private_subnet_id, "CountDown": 120,
+                        "PrivateSubnetId": f.private_subnet_id, "CountDown": 60,
                         "SecondENIId": f.second_nic_id, "TimeStamp": f.timestamp}
             self.table.put_item(Item=instance)
         self.verify_route_tables()
@@ -289,6 +295,7 @@ class AutoScaleGroup(object):
 
     def lch_terminate(self, data):
         f = Fortigate(data, self)
+        logger.info('lch_terminate(): instance = %s, second_eni = %s' % (f.instance_id, f.second_nic_id))
         if f.auto_scale_group is None:
             return
         f.detach_second_interface()
@@ -296,46 +303,63 @@ class AutoScaleGroup(object):
 
     def launch_instance(self, data):
         f = Fortigate(data, self)
+        num_enis = len(f.ec2['NetworkInterfaces'])
+        logger.info('lch_launch_instance(): Fortigate = %s, lch_token = %s, enis = %d, group = %s' %
+                    (f, f.lch_token, num_enis, f.auto_scale_group))
         if len(f.ec2['NetworkInterfaces']) < 2:
             self.ec2_client.terminate_instances(InstanceIds=[f.instance_id])
             try:
                 self.table.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
             except self.db_client.exceptions.ResourceNotFoundException:
                 pass
-            return
+            return STATUS_OK
         if f.auto_scale_group is None:
-            return
+            return STATUS_OK
         try:
             r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
         except self.db_client.exceptions.ResourceNotFoundException:
             r = None
-        if 'Item' not in r:
-            return
+        if r is None or 'Item' not in r:
+            logger.info('lch_launch_instance1a():')
+            return STATUS_OK
+        instance = r['Item']
+        if instance['State'] == 'LCH_LAUNCH':
+            logger.info('lch_launch_instance1a(): Instance Not ready to go InService. i = %s ' % f.instance_id)
+            return STATUS_NOT_OK
+        logger.info('lch_launch_instance2(): ')
         try:
             r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
                                      ProjectionExpression="MasterIp")
         except self.db_client.exceptions.ResourceNotFoundException:
             r2 = None
+        logger.info('lch_launch_instance3(): ')
         if (r2 is not None) and ('MasterIp' in r2['Item']):
             is_instance_master = False
             self.master_ip = r2['Item']['MasterIp']
+            logger.info('lch_launch_instance4(): master_ip = %s' % self.master_ip)
         else:
             is_instance_master = True
             self.master_ip = f.ec2['PrivateIpAddress']
+            logger.info('lch_launch_instance4a(): master_ip = %s' % self.master_ip)
             self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
                                    UpdateExpression="set MasterIp = :m, MasterId = :i, OrigMasterId = :p",
                                    ExpressionAttributeValues={':m': self.master_ip, ':i': f.ec2['InstanceId'],
                                                               ':p': f.ec2['InstanceId']})
+            logger.info('lch_launch_instance4b(): master_ip = %s' % self.master_ip)
         instance = r['Item']
         instance['State'] = "InService"
         if 'PrivateSubnetId' in instance:
             self.private_subnet_id = instance['PrivateSubnetId']
+        logger.info('lch_launch_instance5(): master_ip = %s' % instance)
         self.table.put_item(Item=instance)
         f.add_member_to_autoscale_group(self.master_ip)
+        logger.info('lch_launch_instance6(): master_ip = %s' % instance)
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
             is_instance_master = True
+        logger.info('lch_launch_instance7(): is_instance_aster = %s' % is_instance_master)
         if is_instance_master is True:
             self.callback_add_member_to_lb(self.master_ip, is_instance_master)
+        logger.info('lch_launch_instance8():')
         return STATUS_OK
 
     def terminate_instance(self, data):
@@ -350,7 +374,7 @@ class AutoScaleGroup(object):
                                          ProjectionExpression="#t, #i",
                                          ExpressionAttributeNames={'#t': 'TypeId', '#i': 'TimeStamp'})
                 except self.db_client.exceptions.ResourceNotFoundException:
-                    return
+                    return STATUS_OK
                 db_dict = {}
                 if i is not None and 'Items' in i:
                     for item in i['Items']:
@@ -363,7 +387,7 @@ class AutoScaleGroup(object):
                                 instance = self.ec2_client.describe_instances(InstanceIds=[db_dict[entry]])
                             except Exception as ex:
                                 logger.exception("Error describing instance: %s, ex = %s" % (db_dict[entry], ex))
-                                return
+                                return STATUS_OK
                             new_master_pip = instance['Reservations'][0]['Instances'][0]['PrivateIpAddress']
                             new_master_eip = instance['Reservations'][0]['Instances'][0]['PublicIpAddress']
                             # update db: type 0000 with new IP and ID
@@ -396,9 +420,17 @@ class AutoScaleGroup(object):
                                 instance = self.ec2_client.describe_instances(InstanceIds=[db_dict[entry]])
                             except Exception as ex:
                                 logger.debug("Error describing instance: %s, ex = %s" % (db_dict[entry], ex))
-                                return
+                                return STATUS_OK
                             existing_slave_eip = instance['Reservations'][0]['Instances'][0]['PublicIpAddress']
                             # update fortios: set config sys auto-scale to point to new master
+                            try:
+                                r2 = self.table.get_item(TableName=self.name, Key={"Type": const.TYPE_AUTOSCALE_GROUP,
+                                                                                   "TypeId": "0000"},
+                                                         ProjectionExpression="MasterIp")
+                            except self.db_client.exceptions.ResourceNotFoundException:
+                                r2 = None
+                                return STATUS_OK
+                            master_ip = r2['Item']['MasterIp']
                             callback_url = self.asg['EndPointUrl'] + "/callback/" + self.asg['AutoScaleGroupName']
                             data = {
                                   "status": "enable",
@@ -444,7 +476,7 @@ class AutoScaleGroup(object):
         try:
             r = self.ec2_client.describe_network_interfaces(NetworkInterfaceIds=[nic])
         except Exception as ex:
-            logger.exception('exception describe_network_interface():  %s' % ex.message)
+            logger.exception('exception describe_network_interface():  %s' % ex)
             return False
         if 'NetworkInterfaces' in r and len(r['NetworkInterfaces']) > 0:
             if r['NetworkInterfaces'][0]['Status'] != 'in-use':
@@ -477,6 +509,8 @@ class AutoScaleGroup(object):
     #   so find a fortigate in the same subnet and point the route to the internal ENI
     #   if you can't find a fortigate in the same subnet, look for a fortigate in the other AZ
     #
+    # TODO: what if gateway is a NAT Gateway? Don't think I have tested for that yet.
+    #
     def verify_route_tables(self):
         if self.route_tables is None:
             return
@@ -488,7 +522,7 @@ class AutoScaleGroup(object):
             try:
                 routes = self.ec2_client.describe_route_tables(RouteTableIds=rt_table_list)
             except ClientError as e:
-                logger.exception('verify_route_table(): exception describe_route_tables() %s' % e.message)
+                logger.exception('verify_route_table(): exception describe_route_tables() %s' % e)
                 self.table.delete_item(Key={"Type": TYPE_ROUTETABLE_ID, "TypeId": r['TypeId']})
                 continue
             for rtid in rt_table_list:
@@ -567,13 +601,13 @@ class AutoScaleGroup(object):
             return STATUS_OK
         if 'LifecycleTransition' in msg and msg['LifecycleTransition'] == 'autoscaling:EC2_INSTANCE_LAUNCHING':
             logger.info('process_notification(): LCH_LAUNCH - instance = %s' % msg['EC2InstanceId'])
-            self.lch_launch(data)
+            return self.lch_launch(data)
         if 'LifecycleTransition' in msg and msg['LifecycleTransition'] == 'autoscaling:EC2_INSTANCE_TERMINATING':
             logger.info('process_notification(): LCH_TERMINATE - instance = %s' % msg['EC2InstanceId'])
-            self.lch_terminate(data)
+            return self.lch_terminate(data)
         if 'Event' in msg and msg['Event'] == 'autoscaling:EC2_INSTANCE_LAUNCH':
             logger.info('process_notification(): EC2_LAUNCH - instance = %s' % msg['EC2InstanceId'])
-            self.launch_instance(data)
+            return self.launch_instance(data)
         if 'Event' in msg and msg['Event'] == 'autoscaling:EC2_INSTANCE_TERMINATE':
             logger.info('process_notification(): EC2_TERMINATE - instance = %s' % msg['EC2InstanceId'])
-            self.terminate_instance(data)
+            return self.terminate_instance(data)

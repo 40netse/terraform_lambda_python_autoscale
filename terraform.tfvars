@@ -2,7 +2,7 @@ access_key = ""
 secret_key = ""
 
 aws_region                 = "us-east-1"
-customer_prefix            = "asg-concur"
+customer_prefix            = "asg-mdw"
 availability_zone1         = "us-east-1a"
 availability_zone2         = "us-east-1b"
 vpc_cidr                   = "10.0.0.0/16"
@@ -16,9 +16,7 @@ min_size                   = 0
 desired                    = 0
 cidr_for_access            = "0.0.0.0/0"
 endpoint_instance_type     = "t2.micro"
+fortigate_instance_type     = "t2.small"
 public_ip                  = true
 sns_topic                  = "fgtautoscale-sns"
-api_gateway_url            = "https://sdowbrp2bg.execute-api.us-east-1.amazonaws.com/dev/sns"
-
-
-
+api_gateway_url            = "https://0azjhuaa5e.execute-api.us-east-1.amazonaws.com/dev/sns"

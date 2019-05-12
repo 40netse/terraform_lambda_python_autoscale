@@ -75,7 +75,7 @@ module "ec2-asg" {
   public_subnet1_id              = "${var.public1_subnet_id}"
   public_subnet2_id              = "${var.public2_subnet_id}"
   private_subnet1_id             = "${var.private1_subnet_id}"
-  private_subnet2_id             = "${var.private1_subnet_id}"
+  private_subnet2_id             = "${var.private2_subnet_id}"
   security_group                 = "${module.ec2-sg.id}"
   key_name                       = "${var.keypair}"
   max_size                       = "${var.max_size}"

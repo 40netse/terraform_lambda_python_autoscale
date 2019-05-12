@@ -61,7 +61,7 @@ module "fortigates" {
   customer_prefix            = "${var.customer_prefix}"
   environment                = "${var.environment}"
   cidr_for_access            = "${var.cidr_for_access}"
-  instance_type              = "${var.endpoint_instance_type}"
+  instance_type              = "${var.fortigate_instance_type}"
   public_ip                  = "${var.public_ip}"
   sg_name                    = "fgt"
   sns_topic                  = "${var.sns_topic}"
