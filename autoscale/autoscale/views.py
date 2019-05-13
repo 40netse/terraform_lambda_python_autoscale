@@ -214,6 +214,26 @@ def process_autoscale_group(asg_name):
                             mt.put_item(Item=i)
                         else:
                             pass
+                    if 'State' in i and i['State'] == "InService":
+                        instance_id = i['TypeId']
+                        instance_not_found = True
+                        logger.info("process_autoscale_group(20): status instance = %s" % instance_id)
+                        try:
+                            r = f.ec2_client.describe_instance_status(InstanceIds=[instance_id])
+                            logger.info("process_autoscale_group(20a): Found InService Instance = %s" % instance_id)
+                        except Exception as ex:
+                            logger.info('process_autoscale_group EXCEPTION instance id(): ex = %s' % ex)
+                            instance_not_found = False
+                        if r is not None and 'InstanceStatuses' in r:
+                            state = ['InstanceStatuses']['InstanceSate']
+                            logger.info('process_autoscale_groupe(20a): state = %s' % state)
+                            if state == 'terminated':
+                                instance_not_found = True
+                        if instance_not_found is True:
+                            logger.info("process_autoscale_group(21): Removing From TableInService Instance = %s"
+                                        % instance_id)
+                            mt.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+
     g.verify_route_tables()
     return
 #
@@ -266,7 +286,7 @@ def start_scheduled(event, context):
         mt = dbr.Table(master_table_name)
         try:
             r = mt.query(KeyConditionExpression=Key('Type').eq(TYPE_AUTOSCALE_GROUP))
-        except dbc.db_client.exceptions.ResourceNotFoundException:
+        except dbc.exceptions.ResourceNotFoundException:
             logger.exception("start_scheduled_except_2()")
             return
         if 'Items' in r:
@@ -534,7 +554,7 @@ def sns(request):
             if rc == STATUS_NOT_OK:
                 response = HttpResponse("Instance Not Ready", status=100)
             else:
-                response = HttpResponse("SUCCESS", status=200)
+                response = HttpResponse(0)
             return response
 
 

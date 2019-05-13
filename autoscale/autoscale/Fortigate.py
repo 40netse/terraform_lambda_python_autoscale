@@ -1,4 +1,5 @@
 import boto3
+from botocore.exceptions import ClientError
 import json
 from .const import *
 import base64
@@ -146,18 +147,23 @@ class Fortigate(object):
 
     def update_ec2_info(self):
         self.ec2 = None
+        logger.info('update_ec2_info(): id = %s' % self.instance_id)
         try:
             instances = self.ec2_client.describe_instances(InstanceIds=[self.instance_id])
         except Exception as ex:
             logger.exception("Fortigate.exception(): message = %s, instance = %s" % (ex, self.instance_id))
             return
         if 'ResponseMetadata' not in instances or instances['ResponseMetadata']['HTTPStatusCode'] != STATUS_OK:
+            logger.info('update_ec2_info1():')
             return
         if 'Reservations' not in instances or len(instances['Reservations']) == 0:
+            logger.info('update_ec2_info2():')
             return
         for instance in instances['Reservations']:
             for i in instance['Instances']:
+                logger.info('update_ec2_info3(): ec2_info.instance_id = %s' % i['InstanceId'])
                 if i['InstanceId'] == self.instance_id:
+                    logger.info('update_ec2_info4(): i = %s' % i)
                     self.ec2 = i
 
     #
@@ -298,22 +304,27 @@ class Fortigate(object):
         #
         # If no interface information, this instance is messed up and needs to be ABANDONED
         #
+        logger.info("attach_second_interface(): instance_id = %s, subnets = %s" % (self.instance_id, subnets))
+        self.update_ec2_info()
         if 'NetworkInterfaces' not in self.ec2:
-            logger.info("attach_second_interface(): ABANDON")
-            return
+            logger.info("attach_second_interface0(): ABANDON")
+            return STATUS_NOT_OK
         #
         # This is just a second request for this instance and second interface has already been added
         # Just respond OK and keep going. No need to ABANDON or CONTINUE
         #
         if len(self.ec2['NetworkInterfaces']) == 2:
-            logger.info("attach_second_interface(): two interfaces found")
-            return
+            logger.info("attach_second_interface1(): two interfaces found")
+            return STATUS_NOT_OK
+        if len(self.ec2['NetworkInterfaces']) == 0:
+            logger.info("attach_second_interface2(): no interfaces found")
+            return STATUS_NOT_OK
         #
         # Something is wrong with the metadata. Check the cloudformation template or terraform.
         #
         if len(subnets) != 4:
             self.lch_action('ABANDON')
-            return
+            return STATUS_NOT_OK
         if self.public_subnet_id == subnets[0]:
             self.private_subnet_id = subnets[1]
         if self.public_subnet_id == subnets[2]:
@@ -321,7 +332,7 @@ class Fortigate(object):
         nic = self.ec2_client.create_network_interface(Groups=[self.sg],
                                                        SubnetId=self.private_subnet_id,
                                                        Description='Second Network Interface')
-        logger.info("create_network_interface(): nic = %s" % nic)
+        logger.info("create_network_interface3(): nic = %s" % nic)
 
         #
         # Something bad happened in the create. ABANDON
@@ -391,8 +402,7 @@ class Fortigate(object):
                                                                        AutoScalingGroupName=self.auto_scale_group.name,
                                                                        LifecycleActionToken=self.lch_token,
                                                                        LifecycleActionResult=action)
-        except Exception as ex:
-            logger.exception("complete_life_cycle_action(): message = %s, instance = %s" %
-                             (ex, self.instance_id))
+        except ClientError:
+            logger.exception("Invalid complete_life_cycle_action(): ClientError, instance = %s" % self.instance_id)
             pass
         return
