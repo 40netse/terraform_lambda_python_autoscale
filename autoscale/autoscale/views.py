@@ -225,8 +225,8 @@ def process_autoscale_group(asg_name):
                             logger.info('process_autoscale_group EXCEPTION instance id(): ex = %s' % ex)
                             instance_not_found = False
                         if r is not None and 'InstanceStatuses' in r:
-                            state = ['InstanceStatuses']['InstanceSate']
-                            logger.info('process_autoscale_groupe(20a): state = %s' % state)
+                            state = ['InstanceStatuses']['InstanceState']
+                            logger.info('process_autoscale_group(20a): state = %s' % state)
                             if state == 'terminated':
                                 instance_not_found = True
                         if instance_not_found is True:
