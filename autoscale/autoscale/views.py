@@ -21,7 +21,6 @@ from django.core.cache import caches
 from boto3.dynamodb.conditions import Key
 from django.utils.encoding import smart_str
 
-
 from django.http import HttpResponseBadRequest, HttpResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 
@@ -225,14 +224,17 @@ def process_autoscale_group(asg_name):
                             logger.info('process_autoscale_group EXCEPTION instance id(): ex = %s' % ex)
                             instance_not_found = False
                         if r is not None and 'InstanceStatuses' in r:
-                            state = ['InstanceStatuses']['InstanceState']
+                            state = r['InstanceStatuses'][0]['InstanceState']['Name']
                             logger.info('process_autoscale_group(20a): state = %s' % state)
                             if state == 'terminated':
                                 instance_not_found = True
                         if instance_not_found is True:
                             logger.info("process_autoscale_group(21): Removing From TableInService Instance = %s"
                                         % instance_id)
-                            mt.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+                            try:
+                                mt.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": instance_id})
+                            except g.db_client.exceptions.ResourceNotFoundException:
+                                logger.info('process_autoscale_group delete item(): ex = %s' % ex)
 
     g.verify_route_tables()
     return
