@@ -1,7 +1,9 @@
 #!/bin/bash
+sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt-get update
 sudo apt-get upgrade -y
 sudo apt-get install awscli -y
+sudo apt-get install python3.7 -y
 tput clear
 echo
 echo "Provide AWS Credentials via "aws configure" and deployment specific parameters"
@@ -38,7 +40,7 @@ then
     keypair=$userInput
 fi
 tput clear
-sudo apt-get install python3 python3-pip python3-venv -y
+sudo apt-get install python3-pip python3-venv -y
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
