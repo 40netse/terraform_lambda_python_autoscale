@@ -1,4 +1,4 @@
-#!/bin/bash -vx
+#!/bin/bash
 sudo apt-get update
 sudo apt-get upgrade -y
 sudo apt-get install awscli -y
@@ -22,6 +22,8 @@ fi
 # replace everything between the two quotes on the line that starts with aws_region with the region user input
 #
 sed -i '/^aws_region/ s/"[^"][^"]*"/"'$region'"/' terraform.tfvars
+sed -i '/^availability_zone1/ s/"[^"][^"]*"/"'$region'-1a"/' terraform.tfvars
+sed -i '/^availability_zone2/ s/"[^"][^"]*"/"'$region'-1b"/' terraform.tfvars
 #
 # replace everything between the second set of two quotes on the line that contains with "aws_region":
 # with the region user input
@@ -50,4 +52,4 @@ then
 fi
 sed -i '/^keypair/ s/"[^"][^"]*"/"'$keypair'"/' terraform.tfvars
 
-
+echo "Verify the terraform.tfvars and autoscale/zappa_settings.json file for correct parameters"
