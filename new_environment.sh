@@ -3,7 +3,13 @@ sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt-get update
 sudo apt-get upgrade -y
 sudo apt-get install awscli -y
-sudo apt-get install python3.7 -y
+sudo apt-get install python3.7 python3.7-pip python3.7-venv -y
+python3.7 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip3.7 install -r requirements.txt
+sudo snap install terraform
+
 tput clear
 echo
 echo "Provide AWS Credentials via "aws configure" and deployment specific parameters"
@@ -40,12 +46,6 @@ then
     keypair=$userInput
 fi
 tput clear
-sudo apt-get install python3-pip python3-venv -y
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip3 install -r requirements.txt
-sudo snap install terraform
 
 #
 # Now modify the approriate files based on user input
