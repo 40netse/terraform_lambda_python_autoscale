@@ -1,4 +1,6 @@
 #!/bin/bash -vx
+sudo apt-get update
+sudo apt-get upgrade -y
 sudo apt-get install awscli -y
 aws configure
 sudo apt-get install python3 python3-pip python3-venv -y
@@ -35,7 +37,7 @@ if [[ -n "$userInput" ]]
 then
     s3_bucket=$userInput
 fi
-sed -i '/"aws_region":/ s/"[^"][^"]*"/"'$s3_bucket'"/2' autoscale/zappa_settings.json
+sed -i '/"s3_bucket":/ s/"[^"][^"]*"/"'$s3_bucket'"/2' autoscale/zappa_settings.json
 
 #
 # Ask the user for a keypair that exists in the region
@@ -46,5 +48,6 @@ if [[ -n "$userInput" ]]
 then
     keypair=$userInput
 fi
-sed -i '/"aws_region":/ s/"[^"][^"]*"/"'$keypair'"/2' autoscale/zappa_settings.json
+sed -i '/^keypair/ s/"[^"][^"]*"/"'$keypair'"/' terraform.tfvars
+
 
