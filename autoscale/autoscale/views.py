@@ -215,19 +215,21 @@ def process_autoscale_group(asg_name):
                             pass
                     if 'State' in i and i['State'] == "InService":
                         instance_id = i['TypeId']
-                        instance_not_found = True
+                        instance_not_found = False
                         logger.info("process_autoscale_group(20): status instance = %s" % instance_id)
                         try:
                             r = f.ec2_client.describe_instance_status(InstanceIds=[instance_id])
                             logger.info("process_autoscale_group(20a): Found InService Instance = %s" % instance_id)
                         except Exception as ex:
                             logger.info('process_autoscale_group EXCEPTION instance id(): ex = %s' % ex)
-                            instance_not_found = False
+                            instance_not_found = True
                         if r is not None and 'InstanceStatuses' in r:
                             state = r['InstanceStatuses'][0]['InstanceState']['Name']
                             logger.info('process_autoscale_group(20a): state = %s' % state)
                             if state == 'terminated':
                                 instance_not_found = True
+                            if state == 'running':
+                                instance_not_found = False
                         if instance_not_found is True:
                             logger.info("process_autoscale_group(21): Removing From TableInService Instance = %s"
                                         % instance_id)
