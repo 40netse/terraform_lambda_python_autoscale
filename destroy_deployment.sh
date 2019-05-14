@@ -1,4 +1,4 @@
-#!/usr/bin/env bash -vx
+#!/bin/bash -vx
 terraform destroy -auto-approve
 cd autoscale
 zappa undeploy -y --remove-logs

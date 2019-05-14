@@ -1,4 +1,4 @@
-#!/usr/bin/env bash -vx
+#!/bin/bash -vx
 cd modules/iam_lambda
 terraform init
 terraform apply -auto-approve
