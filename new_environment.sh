@@ -1,9 +1,10 @@
 #!/bin/bash
 sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt-get update
-sudo apt-get upgrade -y
+sudo apt-get upgrade --yes
 sudo apt-get install awscli -y
-sudo apt-get install python3.7 python3.7-pip python3.7-venv -y
+sudo apt remove python python3.5 python3.6 python3.7
+sudo apt-get install python3.7 python3.7-venv python3-pip -y
 python3.7 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
