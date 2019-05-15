@@ -64,7 +64,7 @@ module "nlb" {
 
 }
 
-module "ec2-asg" {
+module "ec2-asg-byol" {
   source = "../modules/autoscale"
   access_key                     = "${var.access_key}"
   secret_key                     = "${var.secret_key}"
@@ -78,14 +78,41 @@ module "ec2-asg" {
   private_subnet2_id             = "${var.private2_subnet_id}"
   security_group                 = "${module.ec2-sg.id}"
   key_name                       = "${var.keypair}"
-  max_size                       = "${var.max_size}"
-  min_size                       = "${var.min_size}"
-  desired                        = "${var.desired}"
+  max_size                       = "${var.max_size-byol}"
+  min_size                       = "${var.min_size-byol}"
+  desired                        = "${var.desired-byol}"
   userdata                       = "${path.cwd}/fortigate-userdata.tpl"
   topic_arn                      = "${module.fgt-sns.arn}"
   target_group_arns              = "${module.nlb.target_group_arns}"
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
+  license                        = "byol"
+  s3_license_bucket              = "${var.s3_license_bucket}"
+}
+module "ec2-asg-paygo" {
+  source = "../modules/autoscale"
+  access_key                     = "${var.access_key}"
+  secret_key                     = "${var.secret_key}"
+  aws_region                     = "${var.aws_region}"
+  vpc_id                         = "${var.vpc_id}"
+  instance_type                  = "${var.instance_type}"
+  ami_id                         = "${data.aws_ami.fortigate.id}"
+  public_subnet1_id              = "${var.public1_subnet_id}"
+  public_subnet2_id              = "${var.public2_subnet_id}"
+  private_subnet1_id             = "${var.private1_subnet_id}"
+  private_subnet2_id             = "${var.private2_subnet_id}"
+  security_group                 = "${module.ec2-sg.id}"
+  key_name                       = "${var.keypair}"
+  max_size                       = "${var.max_size-paygo}"
+  min_size                       = "${var.min_size-paygo}"
+  desired                        = "${var.desired-paygo}"
+  userdata                       = "${path.cwd}/fortigate-userdata.tpl"
+  topic_arn                      = "${module.fgt-sns.arn}"
+  target_group_arns              = "${module.nlb.target_group_arns}"
+  customer_prefix                = "${var.customer_prefix}"
+  environment                    = "${var.environment}"
+  license                        = "paygo"
+  s3_license_bucket              = "${var.s3_license_bucket}"
 }
 
 

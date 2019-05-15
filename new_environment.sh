@@ -70,7 +70,7 @@ python3.7 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip3.7 install -r requirements.txt
-sudo apt install snap snapd
+sudo apt install snap snapd -y
 sudo snap install terraform
 
 #

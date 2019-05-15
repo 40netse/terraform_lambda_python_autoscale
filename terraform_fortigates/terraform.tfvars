@@ -21,9 +21,12 @@ cidr_for_access                = "0.0.0.0/0"
 instance_type                  = "c5.large"
 public_ip                      = true
 sg_name                        = "fgt"
-max_size                       = 5
-min_size                       = 0
-desired                        = 0
+max_size-byol                  = 2
+min_size-byol                  = 0
+desired-byol                   = 0
+max_size-paygo                 = 5
+min_size-paygo                 = 0
+desired-paygo                  = 0
 sns_topic                      = "fgtautoscale-sns"
 
 

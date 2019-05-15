@@ -34,6 +34,7 @@ class AutoScaleGroup(object):
         self.ec2_client = boto3.client('ec2')
         self.ec2_resource = boto3.resource('ec2')
         self.s3_client = boto3.client('s3')
+        self.s3_resource = boto3.resource('s3')
         self.elbv2_client = boto3.client('elbv2')
         self.region = None
         self.account = None
@@ -326,6 +327,18 @@ class AutoScaleGroup(object):
         if instance['State'] == 'LCH_LAUNCH':
             logger.info('lch_launch_instance1a(): Instance Not ready to go InService. i = %s ' % f.instance_id)
             return STATUS_NOT_OK
+
+        key = 'Fortigate-License'
+        license_type = f.get_tag(key)
+        if license_type == 'byol':
+            key = 'Fortigate-S3-License-Bucket'
+            license_bucket = f.get_tag(key)
+            l1 = None
+            while l1 is None:
+                l1 = f.find_s3_license_file(license_bucket)
+                if l1 is None:
+                    bucket = fa.cft.resource_ids['S3LicenseBucket']
+
         logger.info('lch_launch_instance2(): ')
         try:
             r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},

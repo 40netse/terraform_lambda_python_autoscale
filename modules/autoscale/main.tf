@@ -46,7 +46,7 @@ EOF
 }
 
 resource "aws_launch_configuration" "asg_launch" {
-  name                        = "${var.customer_prefix}-${var.environment}-fgt-lconf"
+  name                        = "${var.customer_prefix}-${var.environment}-fgt-lconf-${var.license}"
   image_id                    = "${var.ami_id}"
   instance_type               = "${var.instance_type}"
   key_name                    = "${var.key_name}"
@@ -56,7 +56,7 @@ resource "aws_launch_configuration" "asg_launch" {
 }
 
 resource "aws_autoscaling_group" "asg" {
-  name                    = "${var.customer_prefix}-${var.environment}-fgt-autoscale"
+  name                    = "${var.customer_prefix}-${var.environment}-fgt-autoscale-${var.license}"
   max_size                = "${var.max_size}"
   min_size                = "${var.min_size}"
   desired_capacity        = "${var.desired}"
@@ -65,7 +65,7 @@ resource "aws_autoscaling_group" "asg" {
   termination_policies    = ["NewestInstance"]
   target_group_arns       = ["${var.target_group_arns}"]
   initial_lifecycle_hook {
-      name                    = "${var.customer_prefix}-${var.environment}-fgt-launch-lch"
+      name                    = "${var.customer_prefix}-${var.environment}-fgt-launch-lch-${var.license}"
       default_result          = "ABANDON"
       heartbeat_timeout       = 240
       lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
@@ -76,7 +76,7 @@ resource "aws_autoscaling_group" "asg" {
 
 
   initial_lifecycle_hook {
-      name                    = "${var.customer_prefix}-${var.environment}-fgt-terminate-lch"
+      name                    = "${var.customer_prefix}-${var.environment}-fgt-terminate-lch-${var.license}"
       default_result          = "ABANDON"
       heartbeat_timeout       = 240
       lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
@@ -87,7 +87,17 @@ resource "aws_autoscaling_group" "asg" {
   tags = [
     {
       key                 = "AutoScale Group Instance"
-      value               = "${var.customer_prefix}-${var.environment}"
+      value               = "${var.customer_prefix}-${var.environment}-${var.license}"
+      propagate_at_launch = true
+    },
+    {
+      key                 = "Fortigate-S3-License-Bucket"
+      value               = "${var.s3_license_bucket}"
+      propagate_at_launch = true
+    },
+    {
+      key                 = "Fortigate-License"
+      value               = "${var.license}"
       propagate_at_launch = true
     },
     {

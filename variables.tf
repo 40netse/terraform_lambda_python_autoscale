@@ -10,7 +10,7 @@ variable "customer_prefix" {
 }
 
 variable "environment" {
-  description = "The Environment Tag for prod/dev/test environments"
+  description = "The Tag Environment to differentiate prod/test/dev"
 }
 variable "availability_zone1" {
   description = "Availability Zone 1 for dual AZ VPC"
@@ -50,6 +50,24 @@ variable "min_size" {
 variable "desired" {
   description = "Desired autoscale group size"
 }
+variable "max_size-paygo" {
+  description = "Max autoscale group size"
+}
+variable "min_size-paygo" {
+  description = "Min autoscale group size"
+}
+variable "desired-paygo" {
+  description = "Desired autoscale group size"
+}
+variable "max_size-byol" {
+  description = "Max autoscale group size"
+}
+variable "min_size-byol" {
+  description = "Min autoscale group size"
+}
+variable "desired-byol" {
+  description = "Desired autoscale group size"
+}
 variable "cidr_for_access" {
   description = "CIDR to use for security group access"
 }
@@ -68,3 +86,7 @@ variable "sns_topic" {
 variable "api_gateway_url" {
   description = "API Gateway URL"
 }
+variable "s3_license_bucket" {
+  description = "S3 Bucket that contains BYOL License Files"
+}
+

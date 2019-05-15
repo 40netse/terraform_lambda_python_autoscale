@@ -56,3 +56,9 @@ variable "topic_arn" {
 variable "userdata" {
   description = "Userdata path"
 }
+variable "license" {
+  description = "Type of licensing"
+}
+variable "s3_license_bucket" {
+  description = "S3 Bucket that contains BYOL License Files"
+}
