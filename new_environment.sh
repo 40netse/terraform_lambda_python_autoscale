@@ -10,6 +10,10 @@ echo "Provide AWS Credentials via "aws configure" and deployment specific parame
 echo
 echo
 aws configure
+echo "export AWS_ACCESS_KEY_ID=`aws configure get aws_access_key_id`" >> ~/.bashrc
+echo "export AWS_SECRET_ACCESS_KEY=`aws configure get aws_secret_access_key`" >> ~/.bashrc
+echo "export AWS_REGION=`aws configure get region`" >> ~/.bashrc
+source ~/.bashrc
 #
 # Ask the user which region to deploy to
 #
