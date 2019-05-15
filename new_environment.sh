@@ -82,4 +82,3 @@ sed -i '/^keypair/ s/"[^"][^"]*"/"'$keypair'"/' terraform.tfvars
 
 tput clear
 echo "Verify the terraform.tfvars and autoscale/zappa_settings.json file for correct parameters"
-tput clear
