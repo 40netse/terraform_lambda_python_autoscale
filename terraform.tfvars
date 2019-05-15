@@ -3,6 +3,7 @@ secret_key = ""
 
 aws_region                 = "us-east-1"
 customer_prefix            = "asg-mdw"
+environment                = "stage"
 availability_zone1         = "us-east-1a"
 availability_zone2         = "us-east-1b"
 vpc_cidr                   = "10.0.0.0/16"

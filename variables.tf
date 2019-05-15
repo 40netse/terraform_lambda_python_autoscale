@@ -10,8 +10,7 @@ variable "customer_prefix" {
 }
 
 variable "environment" {
-  description = "The Tag Environment in the S3 tag"
-  default = "stage"
+  description = "The Environment Tag for prod/dev/test environments"
 }
 variable "availability_zone1" {
   description = "Availability Zone 1 for dual AZ VPC"
