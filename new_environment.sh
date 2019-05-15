@@ -43,6 +43,24 @@ if [[ -n "$userInput" ]]
 then
     keypair=$userInput
 fi
+#
+# Ask the user for a customer prefix that will be used to tag all the resources in the deployment
+#
+echo -n "Provide a customer prefix that will be used to name all the deployment resources: "
+read userInput
+if [[ -n "$userInput" ]]
+then
+    customer_prefix=$userInput
+fi
+#
+# Ask the user for a environment tag (prod/dev/test etc.) that will be used to tag all the resources in the deployment
+#
+echo -n "Provide a deployment environment tag (prod/dev/test) that will be used to name all the deployment resources: "
+read userInput
+if [[ -n "$userInput" ]]
+then
+    customer_environment=$userInput
+fi
 tput clear
 
 sudo apt remove python python3.5 python3.6 python3.7 --yes
@@ -64,6 +82,8 @@ sudo snap install terraform
 sed -i '/^aws_region/ s/"[^"][^"]*"/"'$region'"/' terraform.tfvars
 sed -i '/^availability_zone1/ s/"[^"][^"]*"/"'$region'a"/' terraform.tfvars
 sed -i '/^availability_zone2/ s/"[^"][^"]*"/"'$region'b"/' terraform.tfvars
+sed -i '/^customer_prefix/ s/"[^"][^"]*"/"'$customer_prefix'"/' terraform.tfvars
+sed -i '/^environment/ s/"[^"][^"]*"/"'$customer_environment'"/' terraform.tfvars
 #
 # replace everything between the second set of two quotes on the line that contains with "aws_region":
 # with the region user input for the autoscale/zappa_settings.json file
