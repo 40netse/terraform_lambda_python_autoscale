@@ -67,4 +67,7 @@ variable "api_gateway_url" {
 variable "s3_license_bucket" {
   description = "S3 Bucket that contains BYOL License Files"
 }
+variable "acl" {
+  description = "ACL to be applied to the S3 bucket"
+}
 

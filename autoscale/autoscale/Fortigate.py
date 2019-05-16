@@ -407,26 +407,21 @@ class Fortigate(object):
             pass
         return
 
-def find_s3_license_file(self, bucket):
+
+def find_s3_license_file(self, asg, bucket):
     s3c = self.s3_client
     s3r = self.s3_resource
     s3buckets = s3c.list_buckets()
-    s3configbucket = fa.cft.resource_ids['S3Bucket']
-    s3licensebucket = fa.cft.resource_ids['S3LicenseBucket']
-    s3cbucket_exists = False
     s3lbucket_exists = False
     if 'Buckets' in s3buckets:
         for b in s3buckets['Buckets']:
             if 'Name' in b:
-                if b['Name'] == s3configbucket:
-                    s3cbucket_exists = True
-                if b['Name'] == s3licensebucket:
+                if b['Name'] == bucket:
                     s3lbucket_exists = True
-    if s3cbucket_exists is False or s3lbucket_exists is False:
+    if s3lbucket_exists is False:
         return None
-    working_bucket = fa.cft.resource_ids['S3Bucket']
-    s3_full_path = "licenses/" + instance.instance_id + ".lic"
-    objects = s3c.list_objects(Bucket=working_bucket, Prefix="licenses/")
+    s3_full_path = "licenses/" + self.instance_id + ".lic"
+    objects = s3c.list_objects(Bucket=bucket, Prefix="licenses/")
     if 'Contents' in objects:
         for o in objects['Contents']:
             if 'Key' in o:
@@ -436,15 +431,14 @@ def find_s3_license_file(self, bucket):
                     suf = s[1].split('.')
                     if len(suf) == 2:
                         if suf[1] == "lic":
-                            if s[1] not in fa.unused_licenses:
-                                new = fa.ec2client.describe_instances(InstanceIds=[instance.instance_id])
+                            if s[1] not in asg.unused_licenses:
+                                new = asg.ec2_client.describe_instances(InstanceIds=[self.instance_id])
                                 state = new['Reservations'][0]['Instances'][0]['State']['Name']
                                 if state == 'running':
-                                    fa.unused_licenses.append(s[1])
-    path = instance.instance_id + ".lic"
-    if path in fa.unused_licenses:
-        return instance.instance_id
-    bucket = fa.cft.resource_ids['S3LicenseBucket']
+                                    asg.unused_licenses.append(s[1])
+    path = self.instance_id + ".lic"
+    if path in asg.unused_licenses:
+        return self.instance_id
     if s3c is None:
         return None
     if bucket is None:
@@ -460,26 +454,4 @@ def find_s3_license_file(self, bucket):
             break
     if unused_license_key is None:
         return None
-    b = s3r.Bucket(bucket)
-    local_path = "licenses/" + instance.instance_id + ".lic"
-    license_directory = os.path.dirname(local_path)
-    try:
-        os.stat(license_directory)
-    except:
-        os.mkdir(license_directory)
-    o = b.Object(unused_license_key)
-    with open(local_path, 'wb') as content:
-        try:
-            status = o.download_fileobj(content)
-        except Exception, ex:
-            print "caught: %s with FindS3License" % ex.message
-
-    s3_full_path = "licenses/" + instance.instance_id + ".lic"
-    working_bucket = fa.cft.resource_ids['S3Bucket']
-    with open(local_path, 'rb') as content:
-        status = s3c.upload_fileobj(content, working_bucket, s3_full_path)
-    s3path = instance.instance_id + ".lic"
-    os.remove(local_path)
-    fa.unused_licenses.append(s3path)
-    s3c.delete_object(Bucket=bucket, Key=unused_license_key)
-    return instance.instance_id
+    return self.instance_id

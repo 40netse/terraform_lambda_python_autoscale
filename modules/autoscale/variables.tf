@@ -59,6 +59,9 @@ variable "userdata" {
 variable "license" {
   description = "Type of licensing"
 }
+variable "asg_name" {
+  description = "Autoscale group tag to allow multiple autoscale groups"
+}
 variable "s3_license_bucket" {
   description = "S3 Bucket that contains BYOL License Files"
 }

@@ -46,7 +46,7 @@ EOF
 }
 
 resource "aws_launch_configuration" "asg_launch" {
-  name                        = "${var.customer_prefix}-${var.environment}-fgt-lconf-${var.license}"
+  name                        = "${var.customer_prefix}-${var.environment}-${var.asg_name}-fgt-lconf"
   image_id                    = "${var.ami_id}"
   instance_type               = "${var.instance_type}"
   key_name                    = "${var.key_name}"
@@ -56,7 +56,7 @@ resource "aws_launch_configuration" "asg_launch" {
 }
 
 resource "aws_autoscaling_group" "asg" {
-  name                    = "${var.customer_prefix}-${var.environment}-fgt-autoscale-${var.license}"
+  name                    = "${var.customer_prefix}-${var.environment}-${var.asg_name}-fgt-asg"
   max_size                = "${var.max_size}"
   min_size                = "${var.min_size}"
   desired_capacity        = "${var.desired}"

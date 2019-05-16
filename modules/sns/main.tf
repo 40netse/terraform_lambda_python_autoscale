@@ -5,7 +5,7 @@ provider "aws" {
 }
 
 resource "aws_sns_topic" "sns_asg" {
-  name = "${var.customer_prefix}-${var.environment}-fgt-autoscale"
+  name = "${var.customer_prefix}-${var.environment}-${var.asg_name}-fgt-asg"
 }
 
 resource "aws_sns_topic_subscription" "sns_subscription" {

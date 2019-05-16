@@ -1,4 +1,11 @@
 #!/bin/bash -vx
+#aws iam get-role --role-name fortinet-autoscale-lambda-role
+#if [ $? -eq 0 ]
+#then
+#    aws iam delete-role --role-name fortinet-autoscale-lambe-role
+#    policy = `aws iam list-role-policies  --role-name fortinet-autoscale-lambda-role --query PolicyNames[*]`
+#
+#fi
 cd modules/iam_lambda
 terraform init
 terraform apply -auto-approve

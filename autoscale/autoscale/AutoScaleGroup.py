@@ -36,6 +36,7 @@ class AutoScaleGroup(object):
         self.s3_client = boto3.client('s3')
         self.s3_resource = boto3.resource('s3')
         self.elbv2_client = boto3.client('elbv2')
+        self.unused_licenses = []
         self.region = None
         self.account = None
         if data is not None:
@@ -335,7 +336,7 @@ class AutoScaleGroup(object):
             license_bucket = f.get_tag(key)
             l1 = None
             while l1 is None:
-                l1 = f.find_s3_license_file(license_bucket)
+                l1 = f.find_s3_license_file(self, license_bucket)
                 if l1 is None:
                     bucket = fa.cft.resource_ids['S3LicenseBucket']
 

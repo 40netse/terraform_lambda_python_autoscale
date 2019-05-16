@@ -16,6 +16,10 @@ variable "environment" {
   description = "The Tag Environment SNS tag"
 }
 
+variable "asg_name" {
+  description = "Tag to differentiate multiple autoscale groups within customer-prefix combinations"
+}
+
 variable "notification_url" {
   description = "Notification URL for SNS message delivery"
 }
