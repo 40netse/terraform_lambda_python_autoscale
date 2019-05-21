@@ -19,10 +19,30 @@ variable "availability_zone1" {
 variable "availability_zone2" {
   description = "Availability Zone 2 for dual AZ VPC"
 }
+
+variable "vpc_id" {
+    description = "Existing VPC ID where Auto Scale will deploy"
+}
+
+variable "private1_subnet_id" {
+    description = "Private Subnet in AZ1"
+}
+
+variable "private2_subnet_id" {
+    description = "Private Subnet in AZ2"
+  }
+
+variable "public1_subnet_id" {
+    description = "Public Subnet in AZ1"
+}
+
+variable "public2_subnet_id" {
+  description = "Public subnet in AZ2"  
+}
+/*
 variable "vpc_cidr" {
     description = "CIDR for the whole VPC"
 }
-
 variable "public_subnet_cidr_1" {
     description = "CIDR for the Public Subnet"
 }
@@ -38,6 +58,7 @@ variable "public_subnet_cidr_2" {
 variable "private_subnet_cidr_2" {
     description = "CIDR for the Private Subnet"
 }
+*/
 variable "keypair" {
   description = "Keypair for instances that support keypairs"
 }
