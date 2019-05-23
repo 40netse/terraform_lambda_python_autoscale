@@ -5,7 +5,6 @@ provider "aws" {
   secret_key = "${var.secret_key}"
 }
 
-/*
 module "vpc" {
   source = "terraform_vpc"
 
@@ -43,18 +42,18 @@ module "endpoints" {
   public_ip                  = "${var.public_ip}"
   sg_name                    = "endpoint"
 }
-*/
+
 module "fortigates" {
   source = "terraform_fortigates"
 
   access_key                 = "${var.access_key}"
   secret_key                 = "${var.secret_key}"
   aws_region                 = "${var.aws_region}"
-  vpc_id                     = "${var.vpc_id}"
-  public1_subnet_id          = "${var.public1_subnet_id}"
-  public2_subnet_id          = "${var.public2_subnet_id}"
-  private1_subnet_id         = "${var.private1_subnet_id}"
-  private2_subnet_id         = "${var.private2_subnet_id}"
+  vpc_id                     = "${module.vpc.vpc_id}"
+  public1_subnet_id          = "${module.vpc.public1_subnet_id}"
+  public2_subnet_id          = "${module.vpc.public2_subnet_id}"
+  private1_subnet_id         = "${module.vpc.private1_subnet_id}"
+  private2_subnet_id         = "${module.vpc.private2_subnet_id}"
   keypair                    = "${var.keypair}"
   max_size-byol              = "${var.max_size-byol}"
   min_size-byol              = "${var.min_size-byol}"
