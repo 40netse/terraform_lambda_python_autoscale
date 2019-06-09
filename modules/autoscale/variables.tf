@@ -49,6 +49,9 @@ variable "environment" {
 variable "target_group_arns" {
   description = "Target Group ARN of Load Balancer associate with autoscale group"
 }
+variable "target_group_name" {
+  description = "Target Group name of Load Balancer associate with autoscale group"
+}
 variable "topic_arn" {
   description = "Topic ARN for Lifecycle Notifications"
   default     = ""
@@ -64,4 +67,7 @@ variable "asg_name" {
 }
 variable "s3_license_bucket" {
   description = "S3 Bucket that contains BYOL License Files"
+}
+variable monitored_asg_name {
+  description = "ASG to be monitored if not the one being created"
 }

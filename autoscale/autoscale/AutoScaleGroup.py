@@ -4,6 +4,7 @@ import json
 from django.http import HttpResponseBadRequest, HttpResponse
 import time
 from .const import *
+import base64
 
 from .fos_api import FortiOSAPI
 from .Fortigate import Fortigate
@@ -21,6 +22,7 @@ class AutoScaleGroup(object):
                 return
         self.status = None
         self.asg = None
+        self.asg_info = None
         self.table = None
         self.route_tables = None
         self.instance_id_tables = None
@@ -39,6 +41,7 @@ class AutoScaleGroup(object):
         self.unused_licenses = []
         self.region = None
         self.account = None
+        self.target_group = None
         if data is not None:
             p = data['TopicArn'].split(':')
             if len(p) != 6:
@@ -61,6 +64,9 @@ class AutoScaleGroup(object):
                         self.asg = r['Item']
                         if 'EndPointUrl' in self.asg:
                             self.endpoint_url = self.asg['EndPointUrl']
+                        if 'TargetGroup' in self.asg:
+                            self.target_group = self.asg['TargetGroup']
+        self.update_asg_info()
         if data is not None:
             if data['Type'] == 'Notification':
                 self.table = self.db_resource.Table(self.name)
@@ -76,6 +82,8 @@ class AutoScaleGroup(object):
                             self.asg = r['Item']
                             if 'EndPointUrl' in self.asg:
                                 self.endpoint_url = self.asg['EndPointUrl']
+                            if 'TargetGroup' in self.asg:
+                                self.target_group = self.asg['TargetGroup']
         if self.table is not None:
             t = self.table
             try:
@@ -119,6 +127,30 @@ class AutoScaleGroup(object):
     def __repr__(self):
         return ' () ' % ()
 
+    def update_asg_info(self):
+        try:
+            r = self.asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.name])
+        except Exception as ex:
+            logger.exception("exeception - describe_auto_scaling_groups(): ex = %s" % ex)
+            return
+        if len(r['AutoScalingGroups']) > 1:
+            return
+        self.asg_info = r['AutoScalingGroups'][0]
+
+    #
+    # Find a tag that matches key on this Fortigate
+    #
+    def get_tag(self, key):
+        if self.asg_info is None:
+            self.update_asg_info()
+        if 'Tags' not in self.asg_info:
+            return None
+        tags = self.asg_info['Tags']
+        for t in tags:
+            if t['Key'] == key:
+                return t['Value']
+        return None
+
     #
     # This is used during a subscription notification to update the min,desired counts in the Autoscale Group
     # during Development, set the min=1 to save EC2 expense
@@ -137,7 +169,7 @@ class AutoScaleGroup(object):
         # TODO: change back to size for production
         #
         size = len(aws_asg)
-        const.logger.debug('update_instance_count: name = %s, size = %d' % (self.name, size))
+        logger.debug('update_instance_count: name = %s, size = %d' % (self.name, size))
         try:
             self.asg_client.update_auto_scaling_group(AutoScalingGroupName=self.name,
                                                       MinSize=size, DesiredCapacity=size)
@@ -170,6 +202,122 @@ class AutoScaleGroup(object):
                     if 'Table' in t and 'TableStatus' in t['Table']:
                         self.status = t['Table']['TableStatus']
 
+    def find_s3_license_file(self, bucket):
+        if bucket is None:
+            return None
+        s3c = self.s3_client
+        if s3c is None:
+            return None
+        s3buckets = s3c.list_buckets()
+        s3lbucket_exists = False
+        if 'Buckets' in s3buckets:
+            for b in s3buckets['Buckets']:
+                if 'Name' in b:
+                    if b['Name'] == bucket:
+                        s3lbucket_exists = True
+                        break
+        if s3lbucket_exists is False:
+            return None
+        objects = s3c.list_objects(Bucket=bucket)
+        if 'Contents' not in objects:
+            return None
+        for o in objects['Contents']:
+            suffix = o['Key'].split('.')
+            if len(suffix) == 2 and suffix[1] == 'lic':
+                self.write_license_to_db(bucket, o['Key'])
+
+    def assign_license_to_instance(self, fortigate):
+        if fortigate.ec2 is None:
+            return
+        t = self.db_resource.Table(self.name)
+        try:
+            results = t.query(TableName=self.name, KeyConditionExpression=Key('Type').eq(TYPE_BYOL_LICENSE))
+        except Exception as e:
+            logger.exception('no licenses found(): autoscale scale group = %s' % e)
+            return None
+        l = None
+        for l in results['Items']:
+            if l['InstanceOwner'] == 'unused':
+                break
+        if l is None or 'Bucket' not in l:
+            return None
+        bucket = l['Bucket']
+        object_key = l['TypeId']
+        user = 'admin'
+        password = 'Password123!'
+        s3c = self.s3_client
+        f = object_key.split('/')
+        file = '/tmp/' + f[1]
+        with open(file, 'wb') as content:
+            try:
+                status = s3c.download_fileobj(bucket, object_key, content)
+            except Exception as ex:
+                logger.exception("caught: %s with PutLicenseInfo" % ex.message)
+        b64lic = base64.b64encode(open(file).read().encode()).decode()
+        ip = None
+        if 'PublicIpAddress' in fortigate.ec2:
+            ip = fortigate.ec2['PublicIpAddress']
+        elif 'PrivateIpAddress' in self.ec2:
+            ip = fortigate.ec2['PrivateIpAddress']
+        instance_id = fortigate.instance_id
+        fortigate.api = FortiOSAPI()
+        fortigate.api.login(ip, 'admin', 'Password123!')
+        #fortigate.api.login(user, password, verbose, debug)
+
+        #status = fortigate.api.post('/api/v2/monitor/system/vmlicense/upload', params, data={"file_content": lic})
+        status = fortigate.api.post(api='monitor', path='system', name='vmlicense',
+                                    action='upload', data={"file_content": b64lic})
+        logger.debug("PutLicense: %s status = %s" % (fortigate.instance_id, status))
+        self.write_license_to_db(bucket=bucket, key=l['TypeId'], instance_id=instance_id)
+        return status
+
+    def write_license_to_db(self, bucket, key, instance_id=None):
+        table_found = True
+        try:
+            t = self.db_client.describe_table(TableName=self.name)
+            if 'ResponseMetadata' in t:
+                if t['ResponseMetadata']['HTTPStatusCode'] == STATUS_OK:
+                    table_found = True
+        except self.db_client.exceptions.ResourceNotFoundException:
+            table_found = False
+        if table_found is False:
+            return None
+        if self.table is None:
+            self.table = self.db_resource.Table(self.name)
+        try:
+            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_BYOL_LICENSE, "TypeId": key})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            r = None
+        if r is not None and 'Item' in r:
+            size = r['Item']['Size']
+            lf = r['Item']
+        else:
+            size = 0
+            lf = None
+        if instance_id is None and lf is not None:
+            return STATUS_OK
+        if instance_id is None:
+            owner = "unused"
+            ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
+                   "Size": size, "InstanceOwner": owner}
+            try:
+                self.table.put_item(Item=ldb)
+            except Exception as e:
+                logger.exception('exception write_license_to_db():  e = %s' % e)
+                return None
+        else:
+            owner = r['Item']['InstanceOwner']
+            if owner == 'unused':
+                owner = instance_id
+                ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
+                     "Size": size, "InstanceOwner": owner}
+                try:
+                    self.table.put_item(Item=ldb)
+                except Exception as e:
+                    logger.exception('exception write_license_to_db():  e = %s' % e)
+                    return None
+        return STATUS_OK
+
     def write_to_db(self, data, url=None):
         if self.name is None:
             return
@@ -178,6 +326,7 @@ class AutoScaleGroup(object):
         if 'Token' not in data:
             return
         notification_type = data['Type']
+        subscribe_url = data['SubscribeURL']
         table_found = True
         t = None
         try:
@@ -232,9 +381,15 @@ class AutoScaleGroup(object):
         #
         if self.asg is None:
             self.asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000",
-                        "AutoScaleGroupName": self.name, "TimeStamp": data['Timestamp'], "UpdateCounts": "False"}
+                        "AutoScaleGroupName": self.name, "SubscribeURL": subscribe_url,
+                        "TimeStamp": data['Timestamp'], "UpdateCounts": "False"}
             if url is not None:
                 self.asg.update({"EndPointUrl": url})
+            target_group = self.get_tag('Fortigate-Target-Group-Name')
+            if target_group is not None:
+                self.asg.update({"TargetGroup": target_group})
+            else:
+                self.asg.update({"TargetGroup": self.name})
             try:
                 r = self.table.put_item(Item=self.asg)
             except self.db_client.exceptions.ResourceNotFoundException:
@@ -245,6 +400,7 @@ class AutoScaleGroup(object):
                     if status != STATUS_OK:
                         self.asg = None
                     self.status = 'ACTIVE'
+
         return
 
     #
@@ -303,8 +459,21 @@ class AutoScaleGroup(object):
         f.detach_second_interface()
         return STATUS_OK
 
+    def remove_master(self):
+        logger.info('remove_master(): ')
+        try:
+            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            r = None
+
+        self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
+                               UpdateExpression="remove MasterIp, MasterId")
+        return
+
     def launch_instance(self, data):
         f = Fortigate(data, self)
+        if f.ec2 is None:
+            return
         num_enis = len(f.ec2['NetworkInterfaces'])
         logger.info('lch_launch_instance(): Fortigate = %s, lch_token = %s, enis = %d, group = %s' %
                     (f, f.lch_token, num_enis, f.auto_scale_group))
@@ -334,19 +503,25 @@ class AutoScaleGroup(object):
         if license_type == 'byol':
             key = 'Fortigate-S3-License-Bucket'
             license_bucket = f.get_tag(key)
-            l1 = None
-            while l1 is None:
-                l1 = f.find_s3_license_file(self, license_bucket)
-                if l1 is None:
-                    bucket = fa.cft.resource_ids['S3LicenseBucket']
+            self.find_s3_license_file(license_bucket)
+            self.assign_license_to_instance(f)
 
         logger.info('lch_launch_instance2(): ')
         try:
-            r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
-                                     ProjectionExpression="MasterIp")
+            r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
         except self.db_client.exceptions.ResourceNotFoundException:
             r2 = None
         logger.info('lch_launch_instance3(): ')
+        if r2 is not None and 'MasterId' in r2:
+            id = r2['MasterId']
+            instance_master = None
+            try:
+                instance_master = self.ec2_client.describe_instances(InstanceIds=[id])
+            except Exception as ex:
+                logger.exception("Error describing instance: %s, ex = %s" % (id, ex))
+                instance_master = None
+        if instance_master is None:
+            self.remove_master()
         if (r2 is not None) and ('MasterIp' in r2['Item']):
             is_instance_master = False
             self.master_ip = r2['Item']['MasterIp']
@@ -359,6 +534,7 @@ class AutoScaleGroup(object):
                                    UpdateExpression="set MasterIp = :m, MasterId = :i, OrigMasterId = :p",
                                    ExpressionAttributeValues={':m': self.master_ip, ':i': f.ec2['InstanceId'],
                                                               ':p': f.ec2['InstanceId']})
+            self.asg.update([('MasterId', f.ec2['InstanceId'])])
             logger.info('lch_launch_instance4b(): master_ip = %s' % self.master_ip)
         instance = r['Item']
         instance['State'] = "InService"
@@ -366,6 +542,7 @@ class AutoScaleGroup(object):
             self.private_subnet_id = instance['PrivateSubnetId']
         logger.info('lch_launch_instance5(): master_ip = %s' % instance)
         self.table.put_item(Item=instance)
+        logger.info('lch_launch_instance5a():')
         f.add_member_to_autoscale_group(self.master_ip)
         logger.info('lch_launch_instance6(): master_ip = %s' % instance)
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
@@ -381,6 +558,17 @@ class AutoScaleGroup(object):
         new_master_pip = None
         self.table.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
         if self.table is not None:
+            v = f.get_tag('Fortigate-License')
+            if v == 'byol':
+                try:
+                    results = self.table.query(TableName=self.name, KeyConditionExpression=Key('Type').eq(TYPE_BYOL_LICENSE))
+                except Exception as e:
+                    logger.exception('no licenses found(): autoscale scale group = %s' % e)
+                if results is not None:
+                    for lf in results['Items']:
+                        if lf['InstanceOwner'] == f.instance_id:
+                            lf['InstanceOwner'] = 'unused'
+                            self.table.put_item(Item=lf)
             if 'MasterId' in self.asg and f.instance_id == self.asg['MasterId']:
                 logger.info("Lost auto-scale Master instance: %s" % f.instance_id)
                 try:
@@ -438,7 +626,7 @@ class AutoScaleGroup(object):
                             existing_slave_eip = instance['Reservations'][0]['Instances'][0]['PublicIpAddress']
                             # update fortios: set config sys auto-scale to point to new master
                             try:
-                                r2 = self.table.get_item(TableName=self.name, Key={"Type": const.TYPE_AUTOSCALE_GROUP,
+                                r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP,
                                                                                    "TypeId": "0000"},
                                                          ProjectionExpression="MasterIp")
                             except self.db_client.exceptions.ResourceNotFoundException:
@@ -489,8 +677,8 @@ class AutoScaleGroup(object):
     def get_nic_status(self, nic):
         try:
             r = self.ec2_client.describe_network_interfaces(NetworkInterfaceIds=[nic])
-        except Exception as ex:
-            logger.exception('exception describe_network_interface():  %s' % ex)
+        except ClientError as e:
+            logger.exception('exception describe_network_interface():  %s' % e.Response)
             return False
         if 'NetworkInterfaces' in r and len(r['NetworkInterfaces']) > 0:
             if r['NetworkInterfaces'][0]['Status'] != 'in-use':
@@ -578,8 +766,13 @@ class AutoScaleGroup(object):
                 db_instance_info = self.ec2_client.describe_instances(InstanceIds=[instance])
                 db_instance_ip = db_instance_info['Reservations'][0]['Instances'][0]['PublicIpAddress']
                 if ip == db_instance_ip or is_instance_master is True:
+                    logger.info("describe target group: group = %s" % self.target_group)
+                    if self.target_group is None:
+                        tg = self.name
+                    else:
+                        tg = self.target_group
                     try:
-                        lb_target_group = self.elbv2_client.describe_target_groups(Names=[self.name])
+                        lb_target_group = self.elbv2_client.describe_target_groups(Names=[tg])
                     except Exception as ex:
                         logger.exception('Exception, lb_target_group not found!: ex = %s' % ex)
                         return

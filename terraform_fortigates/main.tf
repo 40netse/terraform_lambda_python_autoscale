@@ -25,7 +25,7 @@ data "aws_ami" "fortigate_byol" {
 
   filter {
     name                         = "name"
-    values                       = ["FortiGate-VM64 build0231 (6.0.4) GA*"]
+    values                       = ["FortiGate-VM64-AWS build0231 (6.0.4) GA*"]
   }
 
   filter {
@@ -124,11 +124,13 @@ module "ec2-asg-byol" {
   userdata                       = "${path.cwd}/fortigate-userdata.tpl"
   topic_arn                      = "${module.fgt-sns-byol.arn}"
   target_group_arns              = "${module.nlb.target_group_arns}"
+  target_group_name              = "${module.nlb.target_group_name}"
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
   asg_name                       = "byol"
   license                        = "byol"
   s3_license_bucket              = "${var.s3_license_bucket}"
+  monitored_asg_name             = ""
 }
 
 module "ec2-asg-paygo" {
@@ -151,11 +153,13 @@ module "ec2-asg-paygo" {
   userdata                       = "${path.cwd}/fortigate-userdata.tpl"
   topic_arn                      = "${module.fgt-sns-paygo.arn}"
   target_group_arns              = "${module.nlb.target_group_arns}"
+  target_group_name              = "${module.nlb.target_group_name}"
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
   asg_name                       = "paygo"
   license                        = "paygo"
   s3_license_bucket              = "${var.s3_license_bucket}"
+  monitored_asg_name             = "${module.ec2-asg-byol.name}"
 }
 
 

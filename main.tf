@@ -71,5 +71,4 @@ module "fortigates" {
   api_gateway_url            = "${var.api_gateway_url}"
   s3_license_bucket          = "${var.s3_license_bucket}"
   acl                        = "${var.acl}"
-  byol_ami_id                = "${var.byol_ami_id}"
 }

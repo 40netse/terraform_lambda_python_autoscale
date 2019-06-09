@@ -8,5 +8,9 @@ output "nlb_dns" {
 }
 output "target_group_arns" {
   value       = "${aws_lb_target_group.nlb_target_group.arn}"
-  description = "Network Load Balancer Id"
+  description = "Network Load Balancer Target Group ARN"
+}
+output "target_group_name" {
+  value       = "${aws_lb_target_group.nlb_target_group.name}"
+  description = "Network Load Balancer Target Group Name"
 }

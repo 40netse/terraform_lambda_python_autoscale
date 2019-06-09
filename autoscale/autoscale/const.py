@@ -14,6 +14,8 @@ TYPE_AUTOSCALE_GROUP = "0000"
 TYPE_INSTANCE_ID = "0010"
 TYPE_ENI_ID = "0020"
 TYPE_ROUTETABLE_ID = "0030"
+TYPE_BYOL_LICENSE = "0040"
+TYPE_SUBSCRIPTION_REQUEST = "0050"
 
 schema = [{'AttributeName': 'Type', 'KeyType': 'HASH'},
           {'AttributeName': 'TypeId', 'KeyType': 'RANGE'}]

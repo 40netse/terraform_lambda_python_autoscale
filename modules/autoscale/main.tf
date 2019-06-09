@@ -96,36 +96,41 @@ resource "aws_autoscaling_group" "asg" {
       propagate_at_launch = true
     },
     {
+      key                 = "Fortigate-Target-Group-Name"
+      value               = "${var.target_group_name}"
+      propagate_at_launch = true
+    },
+    {
       key                 = "Fortigate-License"
       value               = "${var.license}"
       propagate_at_launch = true
     },
     {
       key                 = "Name"
-      value               = "${var.customer_prefix}-${var.environment}-asg-instance"
+      value               = "${var.customer_prefix}-${var.environment}-${var.license}-instance"
       propagate_at_launch = true
     }
   ]
 }
 
 resource "aws_autoscaling_policy" "scale-in-policy" {
-  name                   = "${var.customer_prefix}-${var.environment}-autoscale-in-policy"
+  name                   = "${var.customer_prefix}-${var.environment}-${var.asg_name}-scale-in"
   scaling_adjustment     = -1
   adjustment_type        = "ChangeInCapacity"
-  autoscaling_group_name = "${aws_autoscaling_group.asg.name}"
-
+  cooldown               = 300
+  autoscaling_group_name = "${var.monitored_asg_name == "" ? aws_autoscaling_group.asg.name : var.monitored_asg_name}"
 }
 
 resource "aws_autoscaling_policy" "scale-out-policy" {
-  name                   = "${var.customer_prefix}-${var.environment}-autoscale-out-policy"
+  name                   = "${var.customer_prefix}-${var.environment}-${var.asg_name}-scale-out"
   scaling_adjustment     = 1
   adjustment_type        = "ChangeInCapacity"
   cooldown               = 300
-  autoscaling_group_name = "${aws_autoscaling_group.asg.name}"
+  autoscaling_group_name = "${var.monitored_asg_name == "" ? aws_autoscaling_group.asg.name : var.monitored_asg_name}"
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
-  alarm_name             = "${var.customer_prefix}-${var.environment}-cpulo-alarm"
+  alarm_name             = "${var.customer_prefix}-${var.environment}-${var.asg_name}-cpulo-alarm"
   comparison_operator    = "LessThanOrEqualToThreshold"
   evaluation_periods     = "1"
   metric_name            = "CPUUtilization"
@@ -143,7 +148,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
-  alarm_name          = "${var.customer_prefix}-${var.environment}-cpuhi-alarm"
+  alarm_name          = "${var.customer_prefix}-${var.environment}-${var.asg_name}-cpuhi-alarm"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = "1"
   metric_name         = "CPUUtilization"

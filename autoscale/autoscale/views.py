@@ -109,7 +109,7 @@ def respond_to_subscription_request(request):
         return HttpResponseBadRequest('Improper Signature')
 
     # Send a signal to say a valid notification has been received
-    notification.send(sender='fortigate_autscale', notification=data, request=request)
+    notification.send(sender='fortigate_autoscale', notification=data, request=request)
 
     # Handle subscription-based messages.
     if data['Type'] == 'SubscriptionConfirmation':
@@ -158,6 +158,24 @@ def process_autoscale_group(asg_name):
         except g.db_client.exceptions.ResourceNotFoundException:
             logger.exception("process_autoscale_group()")
             return
+        if a is not None and 'Item' in a and 'MasterId' in a['Item']:
+            instance_id = a['Item']['MasterId']
+            instance_master = None
+            try:
+                r = f.ec2_client.describe_instances(InstanceIds=[instance_id])
+            except Exception as ex:
+                logger.exception("process_autoscale_group() Error describing instance: %s, ex = %s" % (r, ex))
+                instance_master = None
+                r = None
+            if r is not None and 'InstanceStatuses' in r:
+                if len(r['InstanceStatuses']) > 0:
+                    state = r['InstanceStatuses'][0]['InstanceState']['Name']
+                    logger.info('process_autoscale_group(23): state = %s' % state)
+                    if state == 'terminated':
+                        instance_master = None
+            if instance_master is None:
+                logger.info('process_autoscale_group(24):')
+                g.remove_master()
         if 'Item' in a and 'UpdateCounts' in a['Item']:
             item = a['Item']
             if item['UpdateCounts'] == 'True':
@@ -182,9 +200,12 @@ def process_autoscale_group(asg_name):
         except Exception as ex:
             logger.exception('mt_query: ex = %s' % ex)
             return
+        logger.info("process_autoscale_group(10): instances count = %s" % len(instances['Items']))
         if 'Items' in instances:
             if len(instances['Items']) > 0:
                 for i in instances['Items']:
+                    logger.info("process_autoscale_group(11): state = %s, countdown = %d" %
+                                (i['State'], i['CountDown']))
                     if 'State' in i and i['State'] == "LCH_LAUNCH":
                         if 'CountDown' in i and i['CountDown'] > 0:
                             value = i['CountDown']
@@ -217,6 +238,7 @@ def process_autoscale_group(asg_name):
                         instance_id = i['TypeId']
                         instance_not_found = False
                         logger.info("process_autoscale_group(20): status instance = %s" % instance_id)
+                        r = None
                         try:
                             r = f.ec2_client.describe_instance_status(InstanceIds=[instance_id])
                             logger.info("process_autoscale_group(20a): Found InService Instance = %s" % instance_id)
@@ -224,12 +246,15 @@ def process_autoscale_group(asg_name):
                             logger.info('process_autoscale_group EXCEPTION instance id(): ex = %s' % ex)
                             instance_not_found = True
                         if r is not None and 'InstanceStatuses' in r:
-                            state = r['InstanceStatuses'][0]['InstanceState']['Name']
-                            logger.info('process_autoscale_group(20a): state = %s' % state)
-                            if state == 'terminated':
+                            if len(r['InstanceStatuses']) > 0:
+                                state = r['InstanceStatuses'][0]['InstanceState']['Name']
+                                logger.info('process_autoscale_group(20c): state = %s' % state)
+                                if state == 'terminated':
+                                    instance_not_found = True
+                                if state == 'running':
+                                    instance_not_found = False
+                            else:
                                 instance_not_found = True
-                            if state == 'running':
-                                instance_not_found = False
                         if instance_not_found is True:
                             logger.info("process_autoscale_group(21): Removing From TableInService Instance = %s"
                                         % instance_id)
@@ -474,7 +499,7 @@ def sns(request):
                         return response
         logger.info("Writing Master Table: auto scale group %s" % g.name)
         mt = g.db_resource.Table(master_table_name)
-        asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": g.name}
+        asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": g.name, "LicenseCountdown": 5}
         master_table_written = False
         while master_table_written is False:
             try:
@@ -579,9 +604,9 @@ def callback(request):
     request_body = request.body
     if request_body is not None and request_body != '':
         data = json.loads(request_body)
-        logger.debug('callback url path: {}' .format(request.path))
-        logger.debug('callback post data: {}' .format(data))
-        logger.debug('parsed asg_name: {}' .format(group))
+        logger.info('callback url path: {}' .format(request.path))
+        logger.info('callback post data: {}' .format(data))
+        logger.info('parsed asg_name: {}' .format(group))
     if ip is not None and group is not None:
         g = AutoScaleGroup(data=None, asg_name=group)
         g.callback_add_member_to_lb(ip, False)

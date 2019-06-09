@@ -29,4 +29,4 @@ sns_topic                  = "fgtautoscale-sns"
 s3_license_bucket          = "asg-mdw-licenses"
 acl                        = "private"
 
-api_gateway_url            = "https://kwbhzco3ge.execute-api.us-east-1.amazonaws.com/dev/sns"
+api_gateway_url            = "https://mclijynvp0.execute-api.us-east-1.amazonaws.com/dev/sns"
