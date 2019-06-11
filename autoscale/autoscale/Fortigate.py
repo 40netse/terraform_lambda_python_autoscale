@@ -229,6 +229,8 @@ class Fortigate(object):
     # ENI is 'available' and can be deleted. The ENI will be deleted using the DB entry on the scheduled thread.
     #
     def detach_second_interface(self):
+        if self.ec2['State']['Name'] == 'terminated':
+            return
         attachment_id = None
         nic_id = None
         for i in self.ec2['NetworkInterfaces']:

@@ -160,22 +160,7 @@ def process_autoscale_group(asg_name):
             return
         if a is not None and 'Item' in a and 'MasterId' in a['Item']:
             instance_id = a['Item']['MasterId']
-            instance_master = None
-            try:
-                r = f.ec2_client.describe_instances(InstanceIds=[instance_id])
-            except Exception as ex:
-                logger.exception("process_autoscale_group() Error describing instance: %s, ex = %s" % (r, ex))
-                instance_master = None
-                r = None
-            if r is not None and 'InstanceStatuses' in r:
-                if len(r['InstanceStatuses']) > 0:
-                    state = r['InstanceStatuses'][0]['InstanceState']['Name']
-                    logger.info('process_autoscale_group(23): state = %s' % state)
-                    if state == 'terminated':
-                        instance_master = None
-            if instance_master is None:
-                logger.info('process_autoscale_group(24):')
-                g.remove_master()
+            g.remove_master(instance_id)
         if 'Item' in a and 'UpdateCounts' in a['Item']:
             item = a['Item']
             if item['UpdateCounts'] == 'True':

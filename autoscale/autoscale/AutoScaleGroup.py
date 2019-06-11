@@ -459,13 +459,25 @@ class AutoScaleGroup(object):
         f.detach_second_interface()
         return STATUS_OK
 
-    def remove_master(self):
-        logger.info('remove_master(): ')
+    def remove_master(self, instance_id):
+        logger.info('remove_master(): instance = %s' % instance_id)
+        try:
+            r = self.ec2_client.describe_instances(InstanceIds=[instance_id])
+        except Exception as ex:
+            logger.exception("remove_master() Error describing instance: %s, ex = %s" % (r, ex))
+        if r is not None and 'Reservations' in r:
+            if len(r['Reservations']) > 0:
+                id = r['Reservations'][0]['Instances'][0]['InstanceId']
+                state = r['Reservations'][0]['Instances'][0]['State']['Name']
+                logger.info('remove_master: id = %s, state = %s' % (id, state))
+                if state != 'terminated':
+                    return
         try:
             r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
         except self.db_client.exceptions.ResourceNotFoundException:
             r = None
-
+        if 'Item' in r and 'MasterId' in r['Item'] and r['Item']['MasterId'] == instance_id:
+            return
         self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
                                UpdateExpression="remove MasterIp, MasterId")
         return
@@ -512,17 +524,8 @@ class AutoScaleGroup(object):
         except self.db_client.exceptions.ResourceNotFoundException:
             r2 = None
         logger.info('lch_launch_instance3(): ')
-        if r2 is not None and 'MasterId' in r2:
-            id = r2['MasterId']
-            instance_master = None
-            try:
-                instance_master = self.ec2_client.describe_instances(InstanceIds=[id])
-            except Exception as ex:
-                logger.exception("Error describing instance: %s, ex = %s" % (id, ex))
-                instance_master = None
-        if instance_master is None:
-            self.remove_master()
-        if (r2 is not None) and ('MasterIp' in r2['Item']):
+        self.remove_master(f.instance_id)
+        if (r2 is not None) and ('Item' in r) and ('MasterIp' in r2['Item']):
             is_instance_master = False
             self.master_ip = r2['Item']['MasterIp']
             logger.info('lch_launch_instance4(): master_ip = %s' % self.master_ip)
@@ -563,6 +566,7 @@ class AutoScaleGroup(object):
                 try:
                     results = self.table.query(TableName=self.name, KeyConditionExpression=Key('Type').eq(TYPE_BYOL_LICENSE))
                 except Exception as e:
+                    results = None
                     logger.exception('no licenses found(): autoscale scale group = %s' % e)
                 if results is not None:
                     for lf in results['Items']:
