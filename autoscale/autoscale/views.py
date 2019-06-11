@@ -246,7 +246,8 @@ def process_autoscale_group(asg_name):
                             try:
                                 mt.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": instance_id})
                             except g.db_client.exceptions.ResourceNotFoundException:
-                                logger.info('process_autoscale_group delete item(): ex = %s' % ex)
+                                logger.info('process_autoscale_group delete item(): Not Found id = %s' %
+                                            instance_id)
 
     g.verify_route_tables()
     return

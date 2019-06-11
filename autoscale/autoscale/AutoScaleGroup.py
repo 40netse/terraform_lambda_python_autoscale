@@ -477,9 +477,8 @@ class AutoScaleGroup(object):
         except self.db_client.exceptions.ResourceNotFoundException:
             r = None
         if 'Item' in r and 'MasterId' in r['Item'] and r['Item']['MasterId'] == instance_id:
-            return
-        self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
-                               UpdateExpression="remove MasterIp, MasterId")
+            self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
+                                   UpdateExpression="remove MasterIp, MasterId")
         return
 
     def launch_instance(self, data):
