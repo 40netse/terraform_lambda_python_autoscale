@@ -705,6 +705,44 @@ class AutoScaleGroup(object):
                         nic = i['SecondENIId']
         return nic
 
+    def verify_byol_licenses(self):
+        if self.table is not None:
+            try:
+                results = self.table.query(TableName=self.name, KeyConditionExpression=Key('Type').eq(TYPE_BYOL_LICENSE))
+            except Exception as e:
+                results = None
+                logger.exception('no licenses found(): autoscale scale group = %s' % e)
+            if results is not None:
+                for lf in results['Items']:
+                    owner = lf['InstanceOwner']
+                    if owner != 'unused':
+                        key = lf['TypeId']
+                        bucket = lf['Bucket']
+                        size = lf['Size']
+                        if owner != 'unused':
+                            instance_id_not_found = False
+                            r = None
+                            try:
+                                r = self.ec2_client.describe_instance_status(InstanceIds=[owner])
+                                logger.info("process_autoscale_group(20a): Found InService Instance = %s" % owner)
+                            except ClientError as e:
+                                if e.response['Error']['Code'] == 'InvalidInstanceID.NotFound':
+                                    logger.info('verify_byol_license EXCEPTION instance not found(): ')
+                                    instance_id_not_found = True
+                            if instance_id_not_found is True:
+                                owner = "unused"
+                                ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
+                                       "Size": size, "InstanceOwner": owner}
+                                self.table.put_item(Item=ldb)
+                            if r is not None and 'InstanceStatuses' in r:
+                                if len(r['InstanceStatuses']) > 0:
+                                    state = r['InstanceStatuses'][0]['InstanceState']['Name']
+                                    if state == 'terminated':
+                                        owner = "unused"
+                                        ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
+                                               "Size": size, "InstanceOwner": owner}
+                                        self.table.put_item(Item=lf)
+
     #
     # Brute forced and this code is so ugly.
     #

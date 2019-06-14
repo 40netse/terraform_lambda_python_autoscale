@@ -11,3 +11,10 @@ config system admin
         set password Password123!
     next
 end
+config firewall address
+    edit "mdw-address"
+        set type ipmask
+        set associated-interface "port1"
+        set subnet 107.220.179.27 255.255.255.255
+    next
+end
