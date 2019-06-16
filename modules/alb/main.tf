@@ -5,7 +5,7 @@ provider "aws" {
 }
 
 resource "aws_lb" "public_alb" {
-  name = "${var.customer_prefix}-${var.environment}-alb"
+  name = "${var.customer_prefix}-${var.environment}"
   internal = false
   enable_cross_zone_load_balancing = true
   load_balancer_type = "application"

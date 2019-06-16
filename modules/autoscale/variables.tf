@@ -47,10 +47,7 @@ variable "environment" {
   description = "The Tag Environment NLB tag"
 }
 variable "target_group_arns" {
-  description = "Target Group ARN of Load Balancer associate with autoscale group"
-}
-variable "target_group_name" {
-  description = "Target Group name of Load Balancer associate with autoscale group"
+  type = "list"
 }
 variable "topic_arn" {
   description = "Topic ARN for Lifecycle Notifications"

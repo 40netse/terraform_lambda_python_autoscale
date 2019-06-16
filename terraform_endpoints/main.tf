@@ -69,5 +69,5 @@ module "alb" {
   subnet1_id           = "${var.private1_subnet_id}"
   subnet2_id           = "${var.private2_subnet_id}"
   customer_prefix      = "${var.customer_prefix}"
-  environment          = "${var.environment}"
+  environment          = "${var.environment}-prv-alb"
 }

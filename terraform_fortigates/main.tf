@@ -91,6 +91,18 @@ module "fgt-sns-paygo" {
   notification_url               = "${var.api_gateway_url}"
 }
 
+module "alb" {
+  source               = "../modules/alb"
+  access_key           = "${var.access_key}"
+  secret_key           = "${var.secret_key}"
+  aws_region           = "${var.aws_region}"
+  vpc_id               = "${var.vpc_id}"
+  subnet1_id           = "${var.public1_subnet_id}"
+  subnet2_id           = "${var.public2_subnet_id}"
+  customer_prefix      = "${var.customer_prefix}"
+  environment          = "${var.environment}-pub-alb"
+}
+
 module "nlb" {
   source                         = "../modules/nlb"
   access_key                     = "${var.access_key}"
@@ -100,7 +112,7 @@ module "nlb" {
   subnet1_id                     = "${var.public1_subnet_id}"
   subnet2_id                     = "${var.public2_subnet_id}"
   customer_prefix                = "${var.customer_prefix}"
-  environment                    = "${var.environment}"
+  environment                    = "${var.environment}-pub-nlb"
 
 }
 
@@ -123,8 +135,7 @@ module "ec2-asg-byol" {
   desired                        = "${var.desired-byol}"
   userdata                       = "${path.cwd}/fortigate-userdata.tpl"
   topic_arn                      = "${module.fgt-sns-byol.arn}"
-  target_group_arns              = "${module.nlb.target_group_arns}"
-  target_group_name              = "${module.nlb.target_group_name}"
+  target_group_arns              = [ "${module.nlb.target_group_arns}", "${module.alb.target_group_arns}" ]
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
   asg_name                       = "byol"
@@ -152,8 +163,7 @@ module "ec2-asg-paygo" {
   desired                        = "${var.desired-paygo}"
   userdata                       = "${path.cwd}/fortigate-userdata.tpl"
   topic_arn                      = "${module.fgt-sns-paygo.arn}"
-  target_group_arns              = "${module.nlb.target_group_arns}"
-  target_group_name              = "${module.nlb.target_group_name}"
+  target_group_arns              = [ "${module.nlb.target_group_arns}", "${module.alb.target_group_arns}" ]
   customer_prefix                = "${var.customer_prefix}"
   environment                    = "${var.environment}"
   asg_name                       = "paygo"

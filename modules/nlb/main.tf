@@ -23,7 +23,7 @@ resource "aws_lb_listener" "nlb_listener" {
 }
 
 resource "aws_lb_target_group" "nlb_target_group" {
-  name = "${var.customer_prefix}-${var.environment}-fgt-autoscale"
+  name = "${var.customer_prefix}-${var.environment}-nlb-tg"
   port = 80
   protocol = "TCP"
   vpc_id = "${var.vpc_id}"

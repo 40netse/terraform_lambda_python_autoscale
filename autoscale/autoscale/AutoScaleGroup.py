@@ -129,11 +129,13 @@ class AutoScaleGroup(object):
 
     def update_asg_info(self):
         try:
+            logger.info("update_asg_info - describe_auto_scaling_groups(): group name = %s" % self.name)
             r = self.asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.name])
         except Exception as ex:
             logger.exception("exeception - describe_auto_scaling_groups(): ex = %s" % ex)
             return
-        if len(r['AutoScalingGroups']) > 1:
+        if len(r['AutoScalingGroups']) == 1:
+            logger.info("auto scale group not found: group name = %s" % self.name)
             return
         self.asg_info = r['AutoScalingGroups'][0]
 

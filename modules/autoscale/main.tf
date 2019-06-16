@@ -86,18 +86,8 @@ resource "aws_autoscaling_group" "asg" {
 
   tags = [
     {
-      key                 = "AutoScale Group Instance"
-      value               = "${var.customer_prefix}-${var.environment}-${var.license}"
-      propagate_at_launch = true
-    },
-    {
       key                 = "Fortigate-S3-License-Bucket"
       value               = "${var.s3_license_bucket}"
-      propagate_at_launch = true
-    },
-    {
-      key                 = "Fortigate-Target-Group-Name"
-      value               = "${var.target_group_name}"
       propagate_at_launch = true
     },
     {
@@ -105,11 +95,6 @@ resource "aws_autoscaling_group" "asg" {
       value               = "${var.license}"
       propagate_at_launch = true
     },
-    {
-      key                 = "Name"
-      value               = "${var.customer_prefix}-${var.environment}-${var.license}-instance"
-      propagate_at_launch = true
-    }
   ]
 }
 
