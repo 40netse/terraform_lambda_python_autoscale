@@ -37,6 +37,7 @@ data "aws_iam_policy_document" "zappa_deployed_lambda" {
       "ec2:DescribeInstances",
       "ec2:DescribeInstanceStatus",
       "ec2:DescribeRouteTables",
+      "ec2:DescribeAutoScalingGroups",
       "ec2:DetachNetworkInterface",
       "ec2:ResetNetworkInterfaceAttribute",
       "ec2:ModifyNetworkInterfaceAttribute",

@@ -45,7 +45,6 @@ module "endpoints" {
 
 module "fortigates" {
   source = "terraform_fortigates"
-
   access_key                 = "${var.access_key}"
   secret_key                 = "${var.secret_key}"
   aws_region                 = "${var.aws_region}"

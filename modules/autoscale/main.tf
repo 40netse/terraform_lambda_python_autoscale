@@ -67,7 +67,7 @@ resource "aws_autoscaling_group" "asg" {
   initial_lifecycle_hook {
       name                    = "${var.customer_prefix}-${var.environment}-fgt-launch-lch-${var.license}"
       default_result          = "ABANDON"
-      heartbeat_timeout       = 240
+      heartbeat_timeout       = 600
       lifecycle_transition    = "autoscaling:EC2_INSTANCE_LAUNCHING"
       notification_target_arn = "${var.topic_arn}"
       role_arn                = "${aws_iam_role.asg-role.arn}"
@@ -78,7 +78,7 @@ resource "aws_autoscaling_group" "asg" {
   initial_lifecycle_hook {
       name                    = "${var.customer_prefix}-${var.environment}-fgt-terminate-lch-${var.license}"
       default_result          = "ABANDON"
-      heartbeat_timeout       = 240
+      heartbeat_timeout       = 600
       lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
       notification_target_arn = "${var.topic_arn}"
       role_arn                = "${aws_iam_role.asg-role.arn}"
@@ -95,6 +95,11 @@ resource "aws_autoscaling_group" "asg" {
       value               = "${var.license}"
       propagate_at_launch = true
     },
+    {
+      key                 = "Name"
+      value               = "${var.customer_prefix}-${var.environment}-${var.license}-instance"
+      propagate_at_launch = true
+    }
   ]
 }
 

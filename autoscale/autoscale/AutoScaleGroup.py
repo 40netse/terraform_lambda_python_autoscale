@@ -135,9 +135,9 @@ class AutoScaleGroup(object):
             logger.exception("exeception - describe_auto_scaling_groups(): ex = %s" % ex)
             return
         if len(r['AutoScalingGroups']) == 1:
-            logger.info("auto scale group not found: group name = %s" % self.name)
+            logger.info("update_asg_info(): group name = %s" % self.name)
+            self.asg_info = r['AutoScalingGroups'][0]
             return
-        self.asg_info = r['AutoScalingGroups'][0]
 
     #
     # Find a tag that matches key on this Fortigate
@@ -145,6 +145,8 @@ class AutoScaleGroup(object):
     def get_tag(self, key):
         if self.asg_info is None:
             self.update_asg_info()
+        if self.asg_info is None:
+            return None
         if 'Tags' not in self.asg_info:
             return None
         tags = self.asg_info['Tags']
@@ -450,6 +452,7 @@ class AutoScaleGroup(object):
                         "PrivateSubnetId": f.private_subnet_id, "CountDown": 60,
                         "SecondENIId": f.second_nic_id, "TimeStamp": f.timestamp}
             self.table.put_item(Item=instance)
+            f.lch_action('CONTINUE')
         self.verify_route_tables()
         return STATUS_OK
 
@@ -552,9 +555,6 @@ class AutoScaleGroup(object):
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
             is_instance_master = True
         logger.info('lch_launch_instance7(): is_instance_aster = %s' % is_instance_master)
-        if is_instance_master is True:
-            self.callback_add_member_to_lb(self.master_ip, is_instance_master)
-        logger.info('lch_launch_instance8():')
         return STATUS_OK
 
     def terminate_instance(self, data):
@@ -718,6 +718,7 @@ class AutoScaleGroup(object):
                 for lf in results['Items']:
                     owner = lf['InstanceOwner']
                     if owner != 'unused':
+                        logger.info("verify_byol_license(1): Found Owner Instance = %s" % owner)
                         key = lf['TypeId']
                         bucket = lf['Bucket']
                         size = lf['Size']
@@ -731,19 +732,18 @@ class AutoScaleGroup(object):
                                 if e.response['Error']['Code'] == 'InvalidInstanceID.NotFound':
                                     logger.info('verify_byol_license EXCEPTION instance not found(): ')
                                     instance_id_not_found = True
+                            if r is not None and 'InstanceStatuses' in r:
+                                if len(r['InstanceStatuses']) > 0:
+                                    state = r['InstanceStatuses'][0]['InstanceState']['Name']
+                                    if state == 'terminated':
+                                        instance_id_not_found = True
+                                else:
+                                    instance_id_not_found = True
                             if instance_id_not_found is True:
                                 owner = "unused"
                                 ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
                                        "Size": size, "InstanceOwner": owner}
                                 self.table.put_item(Item=ldb)
-                            if r is not None and 'InstanceStatuses' in r:
-                                if len(r['InstanceStatuses']) > 0:
-                                    state = r['InstanceStatuses'][0]['InstanceState']['Name']
-                                    if state == 'terminated':
-                                        owner = "unused"
-                                        ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
-                                               "Size": size, "InstanceOwner": owner}
-                                        self.table.put_item(Item=lf)
 
     #
     # Brute forced and this code is so ugly.
@@ -796,47 +796,6 @@ class AutoScaleGroup(object):
                             r.route_table_id = rtid
                             r.write_to_db()
                             dbrt['NetworkInterfaceId'] = eni_id
-
-    def callback_add_member_to_lb(self, ip, is_instance_master):
-        if is_instance_master is True:
-            logger.info("Adding MASTER to Load Balancer: ip = %s" % ip)
-        else:
-            logger.info("Adding SLAVE to Load Balancer: ip = %s" % ip)
-        if self.table is not None:
-            for db_instance in self.instance_id_tables:
-                logger.debug('db_instanceID = {}' .format(db_instance))
-                instance = db_instance['TypeId']
-                db_instance_info = self.ec2_client.describe_instances(InstanceIds=[instance])
-                db_instance_ip = db_instance_info['Reservations'][0]['Instances'][0]['PublicIpAddress']
-                if ip == db_instance_ip or is_instance_master is True:
-                    logger.info("describe target group: group = %s" % self.target_group)
-                    if self.target_group is None:
-                        tg = self.name
-                    else:
-                        tg = self.target_group
-                    try:
-                        lb_target_group = self.elbv2_client.describe_target_groups(Names=[tg])
-                    except Exception as ex:
-                        logger.exception('Exception, lb_target_group not found!: ex = %s' % ex)
-                        return
-                    if lb_target_group is not None and 'TargetGroups' in lb_target_group:
-                        arn = lb_target_group['TargetGroups'][0]['TargetGroupArn']
-                        name = lb_target_group['TargetGroups'][0]['TargetGroupName']
-                        lbc = self.elbv2_client
-                        if arn is not None:
-                            t = {'Id': instance}
-                            try:
-                                add_member_to_lb = \
-                                    lbc.register_targets(TargetGroupArn=arn, Targets=[t])
-                            except Exception as ex:
-                                logger.exception('EXCEPTION register_target(): id = %s, ex = %s' % (instance, ex))
-                                return
-                            if STATUS_OK == add_member_to_lb['ResponseMetadata']['HTTPStatusCode']:
-                                logger.debug('  register instance {} to tgt grp: {}' .format(instance, name))
-                            else:
-                                logger.debug('FAIL to register {} to tgt grp: {}' .format(instance, name))
-                            return
-            logger.info('  Invalid IP for register_target(): {} !' .format(ip))
 
     def process_notification(self, data):
         if 'Message' not in data:

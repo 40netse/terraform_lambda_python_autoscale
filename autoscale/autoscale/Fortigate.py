@@ -383,16 +383,6 @@ class Fortigate(object):
         self.ec2_client.create_tags(Resources=[nic_id], Tags=[{'Key': 'Name', 'Value': name1}])
         nic_id = self.ec2['NetworkInterfaces'][1]['NetworkInterfaceId']
         self.ec2_client.create_tags(Resources=[nic_id], Tags=[{'Key': 'Name', 'Value': name2}])
-        #
-        # This was there because FortiOS < 6.0.4 required a reboot before the NIC was recognized
-        # That is not the case any longer
-        # t = self.auto_scale_group.table
-        # self.auto_scale_group.asg = {"Type": TYPE_ENI_ID, "TypeId": self.second_nic_id,
-        #                              "AutoScaleGroupName": self.auto_scale_group.name,
-        #                              "LifecycleHookName": self.lch_name, "LifecycleToken": self.lch_token,
-        #                              "ENIId": self.second_nic_id}
-        # t.put_item(Item=self.auto_scale_group.asg)
-        self.lch_action('CONTINUE')
         return STATUS_OK
 
     #

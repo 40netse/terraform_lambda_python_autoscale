@@ -595,5 +595,7 @@ def callback(request):
         logger.info('parsed asg_name: {}' .format(group))
     if ip is not None and group is not None:
         g = AutoScaleGroup(data=None, asg_name=group)
-        g.callback_add_member_to_lb(ip, False)
+        #
+        #g.callback_add_member_to_lb(ip, False)
+        #
     return HttpResponse(0)
