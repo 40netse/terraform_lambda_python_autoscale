@@ -11,7 +11,7 @@ class RouteTable(object):
         routes = asg.ec2_client.describe_route_tables(Filters=f)
         for rt in routes['RouteTables']:
             for r in rt['Routes']:
-                if r['DestinationCidrBlock'] == '0.0.0.0/0':
+                if 'DestinationCidrBlock' in r and r['DestinationCidrBlock'] == '0.0.0.0/0':
                     self.route_table_id = rt['RouteTableId']
                     self.subnet_id = subnet
                     if 'NetworkInterfaceId' in r:
