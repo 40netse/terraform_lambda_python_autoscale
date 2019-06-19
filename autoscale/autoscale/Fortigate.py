@@ -172,7 +172,7 @@ class Fortigate(object):
     def get_tag(self, key):
         if self.ec2 is None:
             self.update_ec2_info()
-        if 'Tags' not in self.ec2:
+        if self.ec2 is None or 'Tags' not in self.ec2:
             return None
         tags = self.ec2['Tags']
         for t in tags:

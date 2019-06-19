@@ -248,6 +248,8 @@ def process_autoscale_group(asg_name):
                             except g.db_client.exceptions.ResourceNotFoundException:
                                 logger.info('process_autoscale_group delete item(): Not Found id = %s' %
                                             instance_id)
+                        g.lch_launch_timer(g, instance_id)
+
     g.verify_byol_licenses()
     g.verify_route_tables()
     return
@@ -575,6 +577,7 @@ def sns(request):
 
 @csrf_exempt
 def callback(request):
+    logger.info("callback(): =============== start ============")
     ip = None
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:
@@ -595,6 +598,8 @@ def callback(request):
         logger.info('parsed asg_name: {}' .format(group))
     if ip is not None and group is not None:
         g = AutoScaleGroup(data=None, asg_name=group)
+        f = Fortigate(data, asg=None)
+        f.lch_action('CONTINUE')
         #
         #g.callback_add_member_to_lb(ip, False)
         #

@@ -127,12 +127,39 @@ class AutoScaleGroup(object):
     def __repr__(self):
         return ' () ' % ()
 
+    def get_asg_from_db(self):
+        try:
+            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            logger.exception("exception - get_asg_from_db(): asg = %s" % self.name)
+            r = None
+        if r is None or 'Item' not in r:
+            return None
+        return r['Item']
+
+    def get_instance_from_db(self, f):
+        try:
+            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            logger.exception("exception - get_instance_from_db(): instance_id = %s" % f.instance_id)
+            r = None
+        if r is None or 'Item' not in r:
+            return None
+        return r['Item']
+
+    def delete_instance_from_db(self, f):
+        try:
+            self.table.delete_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            logger.exception("exception - delete_instance_from_db(): instance_id = %s" % f.instance_id)
+        return None
+
     def update_asg_info(self):
         try:
             logger.info("update_asg_info - describe_auto_scaling_groups(): group name = %s" % self.name)
             r = self.asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.name])
         except Exception as ex:
-            logger.exception("exeception - describe_auto_scaling_groups(): ex = %s" % ex)
+            logger.exception("exception - describe_auto_scaling_groups(): ex = %s" % ex)
             return
         if len(r['AutoScalingGroups']) == 1:
             logger.info("update_asg_info(): group name = %s" % self.name)
@@ -178,7 +205,7 @@ class AutoScaleGroup(object):
             self.asg_client.update_auto_scaling_group(AutoScalingGroupName=self.name,
                                                       MinSize=size, DesiredCapacity=size)
         except Exception as ex:
-            logger.exception("exeception - update_auto_scaling_group(): ex = %s" % ex)
+            logger.exception("exception - update_auto_scaling_group(): ex = %s" % ex)
             return False
         return True
 
@@ -407,26 +434,135 @@ class AutoScaleGroup(object):
 
         return
 
-    #
-    # Lifecycle Hook Launch message: create second nic, attach to private subnet,
-    #   put instance_id in DB, return OK to respond to lifecycle hook
-    #
-    # If this is the first LifeCycleHook call, use the metadata (list of subnets)
-    # passed in by CFT or Terraform to find all the route tables used by this VPC.
-    #
-    def lch_launch(self, data):
-        if 'Message' not in data:
-            return STATUS_OK
+    def lch_launch_timer(asg, instance_id):
+        try:
+            r = asg.ec2_client.describe_instance_status(InstanceIds=[instance_id])
+            logger.info("process_autoscale_group(20a): Found InService Instance = %s" % instance_id)
+        except Exception as ex:
+            logger.exception('lch_launch_timer() EXCEPTION instance id(): ex = %s' % ex)
+
+        #
+        # Instance finished it's countdown and should be ready to take input
+        #
+        key = 'Fortigate-License'
+        license_type = f.get_tag(key)
+        if license_type == 'byol':
+            key = 'Fortigate-S3-License-Bucket'
+            license_bucket = f.get_tag(key)
+            self.find_s3_license_file(license_bucket)
+            self.assign_license_to_instance(f)
+
+        logger.info('lch_launch_instance_retry(2): ')
+        self.remove_master(f.instance_id)
+        r2 = self.get_asg_from_db()
+        if (r2 is not None) and ('Item' in r2) and ('MasterIp' in r2['Item']):
+            is_instance_master = False
+            self.master_ip = r2['Item']['MasterIp']
+            logger.info('lch_launch_instance_retry(4): master_ip = %s' % self.master_ip)
+        else:
+            is_instance_master = True
+            self.master_ip = f.ec2['PrivateIpAddress']
+            logger.info('lch_launch_instance_retry(4a): master_ip = %s' % self.master_ip)
+            self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
+                                   UpdateExpression="set MasterIp = :m, MasterId = :i, OrigMasterId = :p",
+                                   ExpressionAttributeValues={':m': self.master_ip, ':i': f.ec2['InstanceId'],
+                                                              ':p': f.ec2['InstanceId']})
+            self.asg.update([('MasterId', f.ec2['InstanceId'])])
+            logger.info('lch_launch_instance_retry(4b): master_ip = %s' % self.master_ip)
+        instance['State'] = "InService"
+        if 'PrivateSubnetId' in instance:
+            self.private_subnet_id = instance['PrivateSubnetId']
+        logger.info('lch_launch_instance_retry(5): master_ip = %s' % instance)
+        self.table.put_item(Item=instance)
+        logger.info('lch_launch_instance(5a):')
+        f.add_member_to_autoscale_group(self.master_ip)
+        logger.info('lch_launch_instance_retry(6): master_ip = %s' % self.master_ip)
+        if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
+            is_instance_master = True
+        logger.info('lch_launch_instance_retry(7): is_instance_master = %s' % is_instance_master)
+        return STATUS_OK
+
+    def lch_launch_retry(self, data, f):
         try:
             msg = json.loads(data['Message'])
         except ValueError:
-            logger.warning('sns(): Notification Not Valid JSON: {}'.format(data['Message']))
+            logger.warning('lch_launch_retry(): Notification Not Valid JSON: {}'.format(data['Message']))
             return STATUS_OK
         if 'NotificationMetadata' not in msg:
-            logger.warning('lch_launch(): no metadata in lch launch notification')
+            logger.warning('lch_launch_retry(): no metadata in lch launch notification')
             return STATUS_OK
-        f = Fortigate(data, self)
-        logger.info('lch_launch(): Fortigate = %s, lch_token = %s' % (f, f.lch_token))
+        metadata = msg['NotificationMetadata']
+        subnets = metadata.split(":")
+        logger.info('lch_launch_retry(): subnets = %s' % subnets)
+        self.verify_route_tables()
+        if f.ec2 is None:
+            return
+        num_enis = len(f.ec2['NetworkInterfaces'])
+        logger.info('lch_launch_instance(): Fortigate = %s, lch_token = %s, enis = %d, group = %s' %
+                    (f, f.lch_token, num_enis, f.auto_scale_group))
+        if len(f.ec2['NetworkInterfaces']) < 2:
+            self.ec2_client.terminate_instances(InstanceIds=[f.instance_id])
+            self.delete_instance_from_db(f)
+            return STATUS_OK
+        if f.auto_scale_group is None:
+            return STATUS_OK
+        instance = self.get_instance_from_db(f)
+        if instance is None:
+            logger.info('lch_launch_instance_retry(1a): instance not found: i = %s' % f.instance_id)
+            return STATUS_OK
+        if instance['State'] == 'LCH_LAUNCH':
+            logger.info('lch_launch_instance_retry(1b): Instance Not ready to go InService. i = %s ' % f.instance_id)
+            return STATUS_NOT_OK
+        #
+        # Instance finished it's countdown and should be ready to take input
+        #
+        key = 'Fortigate-License'
+        license_type = f.get_tag(key)
+        if license_type == 'byol':
+            key = 'Fortigate-S3-License-Bucket'
+            license_bucket = f.get_tag(key)
+            self.find_s3_license_file(license_bucket)
+            self.assign_license_to_instance(f)
+
+        logger.info('lch_launch_instance_retry(2): ')
+        self.remove_master(f.instance_id)
+        r2 = self.get_asg_from_db()
+        if (r2 is not None) and ('Item' in r2) and ('MasterIp' in r2['Item']):
+            is_instance_master = False
+            self.master_ip = r2['Item']['MasterIp']
+            logger.info('lch_launch_instance_retry(4): master_ip = %s' % self.master_ip)
+        else:
+            is_instance_master = True
+            self.master_ip = f.ec2['PrivateIpAddress']
+            logger.info('lch_launch_instance_retry(4a): master_ip = %s' % self.master_ip)
+            self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
+                                   UpdateExpression="set MasterIp = :m, MasterId = :i, OrigMasterId = :p",
+                                   ExpressionAttributeValues={':m': self.master_ip, ':i': f.ec2['InstanceId'],
+                                                              ':p': f.ec2['InstanceId']})
+            self.asg.update([('MasterId', f.ec2['InstanceId'])])
+            logger.info('lch_launch_instance_retry(4b): master_ip = %s' % self.master_ip)
+        instance['State'] = "InService"
+        if 'PrivateSubnetId' in instance:
+            self.private_subnet_id = instance['PrivateSubnetId']
+        logger.info('lch_launch_instance_retry(5): master_ip = %s' % instance)
+        self.table.put_item(Item=instance)
+        logger.info('lch_launch_instance(5a):')
+        f.add_member_to_autoscale_group(self.master_ip)
+        logger.info('lch_launch_instance_retry(6): master_ip = %s' % self.master_ip)
+        if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
+            is_instance_master = True
+        logger.info('lch_launch_instance_retry(7): is_instance_master = %s' % is_instance_master)
+        return STATUS_OK
+
+    def lch_launch_initial(self, data, f):
+        try:
+            msg = json.loads(data['Message'])
+        except ValueError:
+            logger.warning('lch_launch_initial(): Notification Not Valid JSON: {}'.format(data['Message']))
+            return STATUS_OK
+        if 'NotificationMetadata' not in msg:
+            logger.warning('lch_launch_initial(): no metadata in lch launch notification')
+            return STATUS_OK
         metadata = msg['NotificationMetadata']
         subnets = metadata.split(":")
         if self.route_tables is None:
@@ -444,7 +580,7 @@ class AutoScaleGroup(object):
                         rt = {"Subnet": r.subnet_id, "TypeId": r.route_table_id, "NetworkInterfaceId": r.eni}
                         self.route_tables.append(rt)
                 i = i + 1
-        logger.info('lch_launch(): subnets = %s' % subnets)
+        logger.info('lch_launch_initial(): subnets = %s' % subnets)
         rc = f.attach_second_interface(subnets)
         if rc == STATUS_OK:
             instance = {"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id,
@@ -452,9 +588,28 @@ class AutoScaleGroup(object):
                         "PrivateSubnetId": f.private_subnet_id, "CountDown": 60,
                         "SecondENIId": f.second_nic_id, "TimeStamp": f.timestamp}
             self.table.put_item(Item=instance)
-            f.lch_action('CONTINUE')
         self.verify_route_tables()
         return STATUS_OK
+
+    #
+    # Lifecycle Hook Launch message: create second nic, attach to private subnet,
+    #   put instance_id in DB, return OK to respond to lifecycle hook
+    #
+    # If this is the first LifeCycleHook call, use the metadata (list of subnets)
+    # passed in by CFT or Terraform to find all the route tables used by this VPC.
+    #
+    def lch_launch(self, data):
+        if 'Message' not in data:
+            return STATUS_OK
+        f = Fortigate(data, self)
+        logger.info('lch_launch(): Fortigate = %s, lch_token = %s' % (f, f.lch_token))
+        i = self.get_instance_from_db(f)
+        if i is None:
+            self.lch_launch_initial(data, f)
+            return STATUS_NOT_OK
+        else:
+            self.lch_launch_retry(data, f)
+            return STATUS_NOT_OK
 
     def lch_terminate(self, data):
         f = Fortigate(data, self)
@@ -495,72 +650,23 @@ class AutoScaleGroup(object):
                     (f, f.lch_token, num_enis, f.auto_scale_group))
         if len(f.ec2['NetworkInterfaces']) < 2:
             self.ec2_client.terminate_instances(InstanceIds=[f.instance_id])
-            try:
-                self.table.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
-            except self.db_client.exceptions.ResourceNotFoundException:
-                pass
+            self.delete_instance_from_db(f)
             return STATUS_OK
         if f.auto_scale_group is None:
             return STATUS_OK
-        try:
-            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
-        except self.db_client.exceptions.ResourceNotFoundException:
-            r = None
-        if r is None or 'Item' not in r:
-            logger.info('lch_launch_instance1a():')
+        instance = self.get_instance_from_db(f)
+        if instance is None:
+            logger.info('lch_launch_instance(1a): instance not found: i = %s' % f.instance_id)
             return STATUS_OK
-        instance = r['Item']
         if instance['State'] == 'LCH_LAUNCH':
             logger.info('lch_launch_instance1a(): Instance Not ready to go InService. i = %s ' % f.instance_id)
             return STATUS_NOT_OK
-
-        key = 'Fortigate-License'
-        license_type = f.get_tag(key)
-        if license_type == 'byol':
-            key = 'Fortigate-S3-License-Bucket'
-            license_bucket = f.get_tag(key)
-            self.find_s3_license_file(license_bucket)
-            self.assign_license_to_instance(f)
-
-        logger.info('lch_launch_instance2(): ')
-        try:
-            r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
-        except self.db_client.exceptions.ResourceNotFoundException:
-            r2 = None
-        logger.info('lch_launch_instance3(): ')
-        self.remove_master(f.instance_id)
-        if (r2 is not None) and ('Item' in r) and ('MasterIp' in r2['Item']):
-            is_instance_master = False
-            self.master_ip = r2['Item']['MasterIp']
-            logger.info('lch_launch_instance4(): master_ip = %s' % self.master_ip)
-        else:
-            is_instance_master = True
-            self.master_ip = f.ec2['PrivateIpAddress']
-            logger.info('lch_launch_instance4a(): master_ip = %s' % self.master_ip)
-            self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
-                                   UpdateExpression="set MasterIp = :m, MasterId = :i, OrigMasterId = :p",
-                                   ExpressionAttributeValues={':m': self.master_ip, ':i': f.ec2['InstanceId'],
-                                                              ':p': f.ec2['InstanceId']})
-            self.asg.update([('MasterId', f.ec2['InstanceId'])])
-            logger.info('lch_launch_instance4b(): master_ip = %s' % self.master_ip)
-        instance = r['Item']
-        instance['State'] = "InService"
-        if 'PrivateSubnetId' in instance:
-            self.private_subnet_id = instance['PrivateSubnetId']
-        logger.info('lch_launch_instance5(): master_ip = %s' % instance)
-        self.table.put_item(Item=instance)
-        logger.info('lch_launch_instance5a():')
-        f.add_member_to_autoscale_group(self.master_ip)
-        logger.info('lch_launch_instance6(): master_ip = %s' % instance)
-        if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
-            is_instance_master = True
-        logger.info('lch_launch_instance7(): is_instance_aster = %s' % is_instance_master)
         return STATUS_OK
 
     def terminate_instance(self, data):
         f = Fortigate(data, self)
         new_master_pip = None
-        self.table.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+        self.delete_instance_from_db(f)
         if self.table is not None:
             v = f.get_tag('Fortigate-License')
             if v == 'byol':
