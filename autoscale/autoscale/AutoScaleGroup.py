@@ -207,12 +207,15 @@ class AutoScaleGroup(object):
                         self.status = t['Table']['TableStatus']
 
     def find_s3_license_file(self, bucket):
+        logger.info("find_s3_license_file(1): bucket = %s" % bucket)
         if bucket is None:
             return None
         s3c = self.s3_client
         if s3c is None:
             return None
+        logger.info("find_s3_license_file(2)")
         s3buckets = s3c.list_buckets()
+        logger.info("find_s3_license_file(3)")
         s3lbucket_exists = False
         if 'Buckets' in s3buckets:
             for b in s3buckets['Buckets']:
@@ -220,14 +223,18 @@ class AutoScaleGroup(object):
                     if b['Name'] == bucket:
                         s3lbucket_exists = True
                         break
+        logger.info("find_s3_license_file(4)")
         if s3lbucket_exists is False:
             return None
+        logger.info("find_s3_license_file(5)")
         objects = s3c.list_objects(Bucket=bucket)
         if 'Contents' not in objects:
             return None
         for o in objects['Contents']:
+            logger.info("find_s3_license_file(6): object = %s" % o['Key'])
             suffix = o['Key'].split('.')
             if len(suffix) == 2 and suffix[1] == 'lic':
+                logger.info("find_s3_license_file(7): object = %s" % o['Key'])
                 self.write_license_to_db(bucket, o['Key'])
 
     def assign_license_to_instance(self, fortigate):
@@ -453,7 +460,6 @@ class AutoScaleGroup(object):
                         "SecondENIId": f.second_nic_id, "TimeStamp": f.timestamp}
             self.table.put_item(Item=instance)
             f.lch_action('CONTINUE')
-        self.verify_route_tables()
         return STATUS_OK
 
     def lch_terminate(self, data):
@@ -507,18 +513,20 @@ class AutoScaleGroup(object):
         except self.db_client.exceptions.ResourceNotFoundException:
             r = None
         if r is None or 'Item' not in r:
-            logger.info('lch_launch_instance1a():')
+            logger.info('lch_launch_instance(1a):')
             return STATUS_OK
         instance = r['Item']
         if instance['State'] == 'LCH_LAUNCH':
-            logger.info('lch_launch_instance1a(): Instance Not ready to go InService. i = %s ' % f.instance_id)
+            logger.info('lch_launch_instance(1b): Instance Not ready to go InService. i = %s ' % f.instance_id)
             return STATUS_NOT_OK
 
+        logger.info('lch_launch_instance(1c): before licenses')
         key = 'Fortigate-License'
         license_type = f.get_tag(key)
         if license_type == 'byol':
             key = 'Fortigate-S3-License-Bucket'
             license_bucket = f.get_tag(key)
+            logger.info('lch_launch_instance(1d): type = %s, bucket = %s' % (license_type, license_bucket))
             self.find_s3_license_file(license_bucket)
             self.assign_license_to_instance(f)
 
@@ -727,7 +735,7 @@ class AutoScaleGroup(object):
                             r = None
                             try:
                                 r = self.ec2_client.describe_instance_status(InstanceIds=[owner])
-                                logger.info("process_autoscale_group(20a): Found InService Instance = %s" % owner)
+                                logger.info("verify_byol_licenses(20a): Found InService Instance = %s" % owner)
                             except ClientError as e:
                                 if e.response['Error']['Code'] == 'InvalidInstanceID.NotFound':
                                     logger.info('verify_byol_license EXCEPTION instance not found(): ')
@@ -744,58 +752,6 @@ class AutoScaleGroup(object):
                                 ldb = {"Type": TYPE_BYOL_LICENSE, "TypeId": key, "Bucket": bucket,
                                        "Size": size, "InstanceOwner": owner}
                                 self.table.put_item(Item=ldb)
-
-    #
-    # Brute forced and this code is so ugly.
-    #
-    # If route table is pointing to an IGW, find a fortigate in the same subnet and point the route to the internal ENI
-    #   if you can't find a fortigate in the same subnet, look for a fortigate in the other AZ
-    # If route table is point to an ENI and state = 'blackhole', this means the ENI doesn't exist anymore.
-    #   so find a fortigate in the same subnet and point the route to the internal ENI
-    #   if you can't find a fortigate in the same subnet, look for a fortigate in the other AZ
-    #
-    # TODO: what if gateway is a NAT Gateway? Don't think I have tested for that yet.
-    #
-    def verify_route_tables(self):
-        if self.route_tables is None:
-            return
-        if len(self.route_tables) == 0:
-            return
-        for r in self.route_tables:
-            rt_table_list = list([])
-            rt_table_list.append(r['TypeId'])
-            try:
-                routes = self.ec2_client.describe_route_tables(RouteTableIds=rt_table_list)
-            except ClientError as e:
-                logger.exception('verify_route_table(): exception describe_route_tables() %s' % e)
-                self.table.delete_item(Key={"Type": TYPE_ROUTETABLE_ID, "TypeId": r['TypeId']})
-                continue
-            for rtid in rt_table_list:
-                aws_rt_info = self.get_aws_route_info(rtid, routes)
-                for dbrt in self.route_tables:
-                    if dbrt['Subnet'] == aws_rt_info['SubnetId']:
-                        if 'NetworkInterfaceId' in dbrt:
-                            db_eni = dbrt['NetworkInterfaceId']
-                        else:
-                            db_eni = None
-                        eni_id = self.find_best_eni(aws_rt_info['SubnetId'])
-                        if eni_id is None:
-                            return
-                        if aws_rt_info['NetworkInterfaceId'] is None:
-                            db_eni = None
-                        if db_eni != eni_id:
-                            b3route = self.ec2_resource.Route(aws_rt_info['RouteTableId'],
-                                                              aws_rt_info['DestinationCidrBlock'])
-                            try:
-                                b3route.replace(NetworkInterfaceId=eni_id)
-                            except Exception as ex:
-                                logger.exception('route.replace(): ex' % ex)
-                                continue
-                            r = RouteTable(self, aws_rt_info['SubnetId'])
-                            r.eni = eni_id
-                            r.route_table_id = rtid
-                            r.write_to_db()
-                            dbrt['NetworkInterfaceId'] = eni_id
 
     def process_notification(self, data):
         if 'Message' not in data:

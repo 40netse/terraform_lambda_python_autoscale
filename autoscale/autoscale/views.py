@@ -214,7 +214,7 @@ def process_autoscale_group(asg_name):
                                 except Exception as ex:
                                     logger.exception('process_autoscale_group EXCEPTION lch(): ex = %s' % ex)
                                     pass
-                            logger.info("process_autoscale_group(15): Putting Instance In Service")
+                            logger.info("process_autoscale_group(15): Putting Instance In Service: i = %s" % i)
                             i['State'] = "InService"
                             mt.put_item(Item=i)
                         else:
@@ -249,7 +249,6 @@ def process_autoscale_group(asg_name):
                                 logger.info('process_autoscale_group delete item(): Not Found id = %s' %
                                             instance_id)
     g.verify_byol_licenses()
-    g.verify_route_tables()
     return
 #
 # this function is only called via lambda due to a periodic cloudwatch cron
