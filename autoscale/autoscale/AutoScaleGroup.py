@@ -42,6 +42,7 @@ class AutoScaleGroup(object):
         self.region = None
         self.account = None
         self.target_group = None
+        self.cft_password = None
         if data is not None:
             p = data['TopicArn'].split(':')
             if len(p) != 6:
@@ -161,6 +162,9 @@ class AutoScaleGroup(object):
     # during Production, set the min = the number of AZ to provide AZ redundancy
     #
     def update_instance_counts(self):
+        value = self.get_tag('Fortigate-License')
+        if value != 'byol':
+            return
         size = 0
         aws_asg = self.asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.name])
         if 'AutoScalingGroups' in aws_asg:
@@ -213,9 +217,7 @@ class AutoScaleGroup(object):
         s3c = self.s3_client
         if s3c is None:
             return None
-        logger.info("find_s3_license_file(2)")
         s3buckets = s3c.list_buckets()
-        logger.info("find_s3_license_file(3)")
         s3lbucket_exists = False
         if 'Buckets' in s3buckets:
             for b in s3buckets['Buckets']:
@@ -223,10 +225,8 @@ class AutoScaleGroup(object):
                     if b['Name'] == bucket:
                         s3lbucket_exists = True
                         break
-        logger.info("find_s3_license_file(4)")
         if s3lbucket_exists is False:
             return None
-        logger.info("find_s3_license_file(5)")
         objects = s3c.list_objects(Bucket=bucket)
         if 'Contents' not in objects:
             return None
@@ -234,7 +234,6 @@ class AutoScaleGroup(object):
             logger.info("find_s3_license_file(6): object = %s" % o['Key'])
             suffix = o['Key'].split('.')
             if len(suffix) == 2 and suffix[1] == 'lic':
-                logger.info("find_s3_license_file(7): object = %s" % o['Key'])
                 self.write_license_to_db(bucket, o['Key'])
 
     def assign_license_to_instance(self, fortigate):
@@ -254,8 +253,6 @@ class AutoScaleGroup(object):
             return None
         bucket = l['Bucket']
         object_key = l['TypeId']
-        user = 'admin'
-        password = 'Password123!'
         s3c = self.s3_client
         f = object_key.split('/')
         file = '/tmp/' + f[1]
@@ -272,10 +269,7 @@ class AutoScaleGroup(object):
             ip = fortigate.ec2['PrivateIpAddress']
         instance_id = fortigate.instance_id
         fortigate.api = FortiOSAPI()
-        fortigate.api.login(ip, 'admin', 'Password123!')
-        #fortigate.api.login(user, password, verbose, debug)
-
-        #status = fortigate.api.post('/api/v2/monitor/system/vmlicense/upload', params, data={"file_content": lic})
+        fortigate.api.login(ip, 'admin', self.cft_password)
         status = fortigate.api.post(api='monitor', path='system', name='vmlicense',
                                     action='upload', data={"file_content": b64lic})
         logger.debug("PutLicense: %s status = %s" % (fortigate.instance_id, status))
@@ -393,7 +387,7 @@ class AutoScaleGroup(object):
         if self.asg is None:
             self.asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000",
                         "AutoScaleGroupName": self.name, "SubscribeURL": subscribe_url,
-                        "TimeStamp": data['Timestamp'], "UpdateCounts": "False"}
+                        "TimeStamp": data['Timestamp'], "UpdateCounts": "True"}
             if url is not None:
                 self.asg.update({"EndPointUrl": url})
             target_group = self.get_tag('Fortigate-Target-Group-Name')
