@@ -30,6 +30,8 @@ class AutoScaleGroup(object):
         self.master_ip = None
         self.private_subnet_id = None
         self.api = None
+        self.cft_resource = boto3.resource('cloudformation')
+        self.cft_client = boto3.client('cloudformation')
         self.db_resource = boto3.resource('dynamodb')
         self.db_client = boto3.client('dynamodb')
         self.asg_client = boto3.client('autoscaling')
@@ -68,6 +70,14 @@ class AutoScaleGroup(object):
                         if 'TargetGroup' in self.asg:
                             self.target_group = self.asg['TargetGroup']
         self.update_asg_info()
+        self.stack_name = self.get_tag('aws:cloudformation:stack-name')
+        if self.stack_name is not None:
+            c = self.cft_resource.Stack(self.stack_name)
+            for v in (c.parameters):
+                key = v['ParameterKey']
+                value = v['ParameterValue']
+                if key == 'Password':
+                    self.cft_password = value
         if data is not None:
             if data['Type'] == 'Notification':
                 self.table = self.db_resource.Table(self.name)
@@ -552,7 +562,7 @@ class AutoScaleGroup(object):
         logger.info('lch_launch_instance5(): master_ip = %s' % instance)
         self.table.put_item(Item=instance)
         logger.info('lch_launch_instance5a():')
-        f.add_member_to_autoscale_group(self.master_ip)
+        f.add_member_to_autoscale_group(self.master_ip, self.cft_password)
         logger.info('lch_launch_instance6(): master_ip = %s' % instance)
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
             is_instance_master = True
@@ -615,7 +625,7 @@ class AutoScaleGroup(object):
                             }
                             logger.info('posting auto-scale config: {}' .format(data))
                             self.api = FortiOSAPI()
-                            self.api.login(new_master_eip, 'admin', self.asg['OrigMasterId'])
+                            self.api.login(new_master_eip, 'admin', self.cft_password)
                             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
                             self.api.logout()
                             logger.info('restapi response: {}' .format(content))
@@ -651,7 +661,7 @@ class AutoScaleGroup(object):
                             }
                             logger.info('posting auto-scale config: {}' .format(data))
                             self.api = FortiOSAPI()
-                            self.api.login(existing_slave_eip, 'admin', self.asg['OrigMasterId'])
+                            self.api.login(existing_slave_eip, 'admin', self.cft_password)
                             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
                             self.api.logout()
                             logger.info('restapi response: {}' .format(content))

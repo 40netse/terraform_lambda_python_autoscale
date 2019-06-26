@@ -111,7 +111,7 @@ class Fortigate(object):
     #
     # Do everything necessary to get a ScaleOut instance ready to run
     #
-    def make_instance_ready(self):
+    def make_instance_ready(self, password):
         #
         # get the firmware version from the 'get system status' command.
         # This will be used to format API calls that changed post 5.4.0
@@ -124,7 +124,7 @@ class Fortigate(object):
         elif 'PrivateIpAddress' in self.ec2:
             ip = self.ec2['PrivateIpAddress']
         self.api = FortiOSAPI()
-        self.api.login(ip, 'admin', self.instance_id)
+        self.api.login(ip, 'admin', password)
         content = self.api.get(api='monitor', path='system', name='firmware', action='select', mkey=None)
         data = json.loads(content)
         if 'version' in data:
@@ -259,7 +259,7 @@ class Fortigate(object):
         t.put_item(Item=self.auto_scale_group.asg)
         return
 
-    def add_member_to_autoscale_group(self, master_ip):
+    def add_member_to_autoscale_group(self, master_ip, password):
         callback_url = self.auto_scale_group.endpoint_url + "/" + "callback/" + self.auto_scale_group.name
         if self.ec2['PrivateIpAddress'] == master_ip:
             data = {
@@ -274,7 +274,7 @@ class Fortigate(object):
             logger.info('posting auto-scale config: {}' .format(data))
             self.api = FortiOSAPI()
             try:
-                self.api.login(self.ec2['PublicIpAddress'], 'admin', self.instance_id)
+                self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
             except Exception as ex:
                 logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
                 return
@@ -295,7 +295,7 @@ class Fortigate(object):
             logger.info('posting auto-scale config: {}' .format(data))
             self.api = FortiOSAPI()
             try:
-                self.api.login(self.ec2['PublicIpAddress'], 'admin', self.instance_id)
+                self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
             except Exception as ex:
                 logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
                 return
