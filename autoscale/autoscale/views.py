@@ -596,5 +596,5 @@ def callback(request):
     request_body = request.body
     if request_body is not None and request_body != '':
         i = json.loads(request_body)
-        logger.info("callback(start): instance = %s, group = %s, ip = %s" % (i['instance'], ip, group))
+        logger.info("callback(start): instance = %s, group = %s, ip = %s" % (i['instance'], group, ip))
     return HttpResponse(0)
