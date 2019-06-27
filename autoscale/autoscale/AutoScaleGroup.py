@@ -140,13 +140,13 @@ class AutoScaleGroup(object):
 
     def update_asg_info(self):
         try:
-            logger.info("update_asg_info - describe_auto_scaling_groups(): group name = %s" % self.name)
+            #logger.info("update_asg_info - describe_auto_scaling_groups(): group name = %s" % self.name)
             r = self.asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.name])
         except Exception as ex:
             logger.exception("exeception - describe_auto_scaling_groups(): ex = %s" % ex)
             return
         if len(r['AutoScalingGroups']) == 1:
-            logger.info("update_asg_info(): group name = %s" % self.name)
+            #logger.info("update_asg_info(): group name = %s" % self.name)
             self.asg_info = r['AutoScalingGroups'][0]
             return
 
@@ -533,7 +533,6 @@ class AutoScaleGroup(object):
             logger.info('lch_launch_instance(1b): Instance Not ready to go InService. i = %s ' % f.instance_id)
             return STATUS_NOT_OK
 
-        logger.info('lch_launch_instance(1c): before licenses')
         key = 'Fortigate-License'
         license_type = f.get_tag(key)
         try:
@@ -541,7 +540,6 @@ class AutoScaleGroup(object):
         except self.db_client.exceptions.ResourceNotFoundException:
             r = None
         if r is None or 'Item' not in r:
-            logger.info('write_license_to_db(1a):')
             return STATUS_NOT_OK
         instance = r['Item']
         license_applied = False
@@ -569,17 +567,15 @@ class AutoScaleGroup(object):
             self.table.put_item(Item=instance)
             return STATUS_NOT_OK
 
-        logger.info('lch_launch_instance2(): ')
         try:
             r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
         except self.db_client.exceptions.ResourceNotFoundException:
             r2 = None
-        logger.info('lch_launch_instance3(): ')
         self.remove_master(f.instance_id)
         if (r2 is not None) and ('Item' in r) and ('MasterIp' in r2['Item']):
             is_instance_master = False
             self.master_ip = r2['Item']['MasterIp']
-            logger.info('lch_launch_instance4(): master_ip = %s' % self.master_ip)
+            logger.info('lch_launch_instance4(): slave info master_ip = %s' % self.master_ip)
         else:
             is_instance_master = True
             self.master_ip = f.ec2['PrivateIpAddress']
@@ -589,7 +585,7 @@ class AutoScaleGroup(object):
                                    ExpressionAttributeValues={':m': self.master_ip, ':i': f.ec2['InstanceId'],
                                                               ':p': f.ec2['InstanceId']})
             self.asg.update([('MasterId', f.ec2['InstanceId'])])
-            logger.info('lch_launch_instance4b(): master_ip = %s' % self.master_ip)
+            logger.info('lch_launch_instance4b(): master info master_ip = %s' % self.master_ip)
         instance = r['Item']
         if 'PrivateSubnetId' in instance:
             self.private_subnet_id = instance['PrivateSubnetId']

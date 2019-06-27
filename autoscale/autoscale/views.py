@@ -405,7 +405,7 @@ def sns(request):
     except ValueError:
         logger.info('sns(): Notification Not Valid JSON: {}'.format(body))
         return HttpResponseBadRequest('Not Valid JSON')
-    logger.info("sns(): request = %s" % (json.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))))
+    #logger.info("sns(): request = %s" % (json.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))))
     if 'Type' in data and data['Type'] != 'SubscriptionConfirmation':
         if 'Message' in data:
             try:
@@ -418,7 +418,7 @@ def sns(request):
         return HttpResponseBadRequest('Not Valid JSON')
     url = None
     if 'HTTP_HOST' in request.META:
-        logger.info("sns(): http_host = %s" % request.META['HTTP_HOST'])
+        #logger.info("sns(): http_host = %s" % request.META['HTTP_HOST'])
         host_url = request.META['HTTP_HOST']
         try:
             u, port = host_url.split(':')
@@ -430,7 +430,8 @@ def sns(request):
         if port is not None and port == '8000':
             url = 'http://' + request.META['HTTP_HOST']
         else:
-            url = 'https://' + request.META['HTTP_HOST']
+            url = 'https://' + request.META['HTTP_HOST'] + '/dev'
+        logger.info("Callback url: %s" % url)
     #
     # Handle Subscription Request up front. The first Subscription request will trigger a DynamoDB table creation
     # and it will not be responded to. The second request will have an ACTIVE table and the subscription request
@@ -587,16 +588,13 @@ def callback(request):
         ip = x_forwarded_for.split(',')[0]
     else:
         ip = request.META.get('REMOTE_ADDR')
-    logger.info('received callback connection from: {}' .format(ip))
     if request.method != 'POST':
         raise Http404
     rpath = request.path
-    a, b, c = rpath.split("/")
-    group = c
+    a, b, c, d = rpath.split("/")
+    group = d
     request_body = request.body
     if request_body is not None and request_body != '':
-        data = json.loads(request_body)
-        logger.info('callback url path: {}' .format(request.path))
-        logger.info('callback post data: {}' .format(data))
-        logger.info('parsed asg_name: {}' .format(group))
+        i = json.loads(request_body)
+        logger.info("callback(start): instance = %s, group = %s, ip = %s" % (i['instance'], ip, group))
     return HttpResponse(0)
