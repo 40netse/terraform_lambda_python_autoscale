@@ -256,6 +256,12 @@ class AutoScaleGroup(object):
             logger.exception('no licenses found(): autoscale scale group = %s' % e)
             return None
         l = None
+        #
+        # Check to see if this instance id already has a license.
+        #
+        for l in results['Items']:
+            if l['InstanceOwner'] == fortigate.instance_id:
+                return -2
         for l in results['Items']:
             if l['InstanceOwner'] == 'unused':
                 break
@@ -279,10 +285,13 @@ class AutoScaleGroup(object):
             ip = fortigate.ec2['PrivateIpAddress']
         instance_id = fortigate.instance_id
         fortigate.api = FortiOSAPI()
-        fortigate.api.login(ip, 'admin', self.cft_password)
+        status = fortigate.api.login(ip, 'admin', self.cft_password)
+        if status == -1:
+            logger.info("PutLicense failed: %s status = %s" % (fortigate.instance_id, status))
+            return status
         status = fortigate.api.post(api='monitor', path='system', name='vmlicense',
                                     action='upload', data={"file_content": b64lic})
-        logger.debug("PutLicense: %s status = %s" % (fortigate.instance_id, status))
+        logger.info("PutLicense: %s status = %s, file = %s" % (fortigate.instance_id, status, file))
         self.write_license_to_db(bucket=bucket, key=l['TypeId'], instance_id=instance_id)
         return status
 
@@ -397,7 +406,7 @@ class AutoScaleGroup(object):
         if self.asg is None:
             self.asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000",
                         "AutoScaleGroupName": self.name, "SubscribeURL": subscribe_url,
-                        "TimeStamp": data['Timestamp'], "UpdateCounts": "True"}
+                        "TimeStamp": data['Timestamp'], "UpdateCounts": "False"}
             if url is not None:
                 self.asg.update({"EndPointUrl": url})
             target_group = self.get_tag('Fortigate-Target-Group-Name')
@@ -527,12 +536,38 @@ class AutoScaleGroup(object):
         logger.info('lch_launch_instance(1c): before licenses')
         key = 'Fortigate-License'
         license_type = f.get_tag(key)
-        if license_type == 'byol':
+        try:
+            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            r = None
+        if r is None or 'Item' not in r:
+            logger.info('write_license_to_db(1a):')
+            return STATUS_NOT_OK
+        instance = r['Item']
+        license_applied = False
+        if instance['State'] == 'ADD_TO_AUTOSCALE_GROUP':
+            license_applied = True
+        if license_applied is False and license_type == 'byol':
             key = 'Fortigate-S3-License-Bucket'
             license_bucket = f.get_tag(key)
             logger.info('lch_launch_instance(1d): type = %s, bucket = %s' % (license_type, license_bucket))
             self.find_s3_license_file(license_bucket)
-            self.assign_license_to_instance(f)
+            rc = self.assign_license_to_instance(f)
+            if rc == -1:
+                return STATUS_NOT_OK
+            #
+            # if rc is -2, the instance already has a license and the message is a duplicate.
+            # Just return STATUS_OK and ignore it.
+            #
+            if rc == -2:
+                logger.info('lch_launch_instance(1e): received duplicate EC2_LAUNCH'
+
+                            )
+                return STATUS_OK
+            instance = r['Item']
+            instance['State'] = 'ADD_TO_AUTOSCALE_GROUP'
+            self.table.put_item(Item=instance)
+            return STATUS_NOT_OK
 
         logger.info('lch_launch_instance2(): ')
         try:
@@ -556,21 +591,40 @@ class AutoScaleGroup(object):
             self.asg.update([('MasterId', f.ec2['InstanceId'])])
             logger.info('lch_launch_instance4b(): master_ip = %s' % self.master_ip)
         instance = r['Item']
-        instance['State'] = "InService"
         if 'PrivateSubnetId' in instance:
             self.private_subnet_id = instance['PrivateSubnetId']
-        logger.info('lch_launch_instance5(): master_ip = %s' % instance)
+        logger.info('lch_launch_instance5(): DB instance = %s' % instance)
+        rc = f.add_member_to_autoscale_group(self.master_ip, self.cft_password)
+        if rc == -1:
+            logger.info('lch_launch_instance5a(): DB instance = %s failed to add to autoscale group' % instance)
+            return STATUS_NOT_OK
+        instance['State'] = 'InService'
         self.table.put_item(Item=instance)
-        logger.info('lch_launch_instance5a():')
-        f.add_member_to_autoscale_group(self.master_ip, self.cft_password)
-        logger.info('lch_launch_instance6(): master_ip = %s' % instance)
+        logger.info('lch_launch_instance6(): State = %s' % instance['State'])
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
-            is_instance_master = True
-        logger.info('lch_launch_instance7(): is_instance_aster = %s' % is_instance_master)
+            logger.info('lch_launch_instance7(): ADDING MASTER')
+        else:
+            logger.info('lch_launch_instance7(): ADDING SLAVE')
         return STATUS_OK
 
     def terminate_instance(self, data):
         f = Fortigate(data, self)
+        try:
+            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+        except self.db_client.exceptions.ResourceNotFoundException:
+            r = None
+        if r is None or 'Item' not in r:
+            logger.info('lch_launch_instance(1a):')
+            return STATUS_OK
+        instance = r['Item']
+        if 'SecondENIId' in instance:
+            eni = instance['SecondENIId']
+            t = self.table
+            item = {"Type": TYPE_ENI_ID, "TypeId": eni,
+                    "AutoScaleGroupName": self.name,
+                                         "LifecycleHookName": self.lch_name, "LifecycleToken": self.lch_token,
+                                         "ENIId": eni}
+            t.put_item(Item=item)
         new_master_pip = None
         self.table.delete_item(Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
         if self.table is not None:
@@ -723,9 +777,9 @@ class AutoScaleGroup(object):
         if self.table is not None:
             try:
                 results = self.table.query(TableName=self.name, KeyConditionExpression=Key('Type').eq(TYPE_BYOL_LICENSE))
-            except Exception as e:
-                results = None
-                logger.exception('no licenses found(): autoscale scale group = %s' % e)
+            except self.db_client.exceptions.ResourceNotFoundException:
+                logger.exception('no licenses found():')
+                return
             if results is not None:
                 for lf in results['Items']:
                     owner = lf['InstanceOwner']

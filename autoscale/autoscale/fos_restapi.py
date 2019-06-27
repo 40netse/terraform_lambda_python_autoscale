@@ -107,10 +107,13 @@ class FortiOSREST(object):
         res = self._session.post(url,
                                  data='username=' + username + '&secretkey=' + password,
                                  verify=False)
+        if res.status_code != 200:
+            return -1
         self.dprint(res)
 
         # Update session's csrftoken
         self.update_csrf()
+        return 0
 
     def logout(self):
         url = self.url_prefix + '/logout'

@@ -219,7 +219,7 @@ def process_autoscale_group(asg_name):
                             mt.put_item(Item=i)
                         else:
                             pass
-                    if 'State' in i and i['State'] == "InService":
+                    if 'State' in i and (i['State'] == "InService" or i['State'] == 'ADD_TO_AUTOSCALE_GROUP'):
                         instance_id = i['TypeId']
                         instance_not_found = False
                         logger.info("process_autoscale_group(20): status instance = %s" % instance_id)
@@ -241,6 +241,13 @@ def process_autoscale_group(asg_name):
                             else:
                                 instance_not_found = True
                         if instance_not_found is True:
+                            if 'SecondENIId' in i:
+                                eni = i['SecondENIId']
+                                item = {"Type": TYPE_ENI_ID, "TypeId": eni,
+                                        "AutoScaleGroupName": g.name,
+                                        "LifecycleHookName": 'None', "LifecycleToken": 'None',
+                                        "ENIId": eni}
+                                mt.put_item(Item=item)
                             logger.info("process_autoscale_group(21): Removing From TableInService Instance = %s"
                                         % instance_id)
                             try:
@@ -592,9 +599,4 @@ def callback(request):
         logger.info('callback url path: {}' .format(request.path))
         logger.info('callback post data: {}' .format(data))
         logger.info('parsed asg_name: {}' .format(group))
-    if ip is not None and group is not None:
-        g = AutoScaleGroup(data=None, asg_name=group)
-        #
-        #g.callback_add_member_to_lb(ip, False)
-        #
     return HttpResponse(0)

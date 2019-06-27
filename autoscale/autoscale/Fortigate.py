@@ -261,6 +261,7 @@ class Fortigate(object):
 
     def add_member_to_autoscale_group(self, master_ip, password):
         callback_url = self.auto_scale_group.endpoint_url + "/" + "callback/" + self.auto_scale_group.name
+        status = -1
         if self.ec2['PrivateIpAddress'] == master_ip:
             data = {
                   "status": "enable",
@@ -269,16 +270,22 @@ class Fortigate(object):
                   "psksecret": self.auto_scale_group.name,
                   "callback-url": callback_url
             }
-            self.ec2_client.create_tags(Resources=[self.instance_id],
-                                        Tags=[{'Key': 'Fortinet-Autoscale', 'Value': 'Master'}])
             logger.info('posting auto-scale config: {}' .format(data))
             self.api = FortiOSAPI()
             try:
-                self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
+                status = self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
             except Exception as ex:
                 logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
                 return
             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
+            try:
+                msg = json.loads(content)
+            except json.decoder.JSONDecodeError:
+                return -1
+            if msg['status'] == 'success':
+                self.ec2_client.create_tags(Resources=[self.instance_id],
+                                            Tags=[{'Key': 'Fortinet-Autoscale', 'Value': 'Master'}])
+                status = 0
             logger.info('restapi response: {}' .format(content))
             self.api.logout()
         else:
@@ -290,8 +297,6 @@ class Fortigate(object):
                   "psksecret": self.auto_scale_group.name,
                   "callback-url": callback_url
             }
-            self.ec2_client.create_tags(Resources=[self.instance_id],
-                                        Tags=[{'Key': 'Fortinet-Autoscale', 'Value': 'Slave'}])
             logger.info('posting auto-scale config: {}' .format(data))
             self.api = FortiOSAPI()
             try:
@@ -300,9 +305,17 @@ class Fortigate(object):
                 logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
                 return
             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
+            try:
+                msg = json.loads(content)
+            except json.decoder.JSONDecodeError:
+                return -1
+            if msg['status'] == 'success':
+                self.ec2_client.create_tags(Resources=[self.instance_id],
+                                            Tags=[{'Key': 'Fortinet-Autoscale', 'Value': 'Slave'}])
+                status = 0
             logger.info('restapi response: {}' .format(content))
             self.api.logout()
-        return
+        return status
 
     def attach_second_interface(self, subnets):
         #
@@ -391,6 +404,8 @@ class Fortigate(object):
     def lch_action(self, action):
         if action == 'ABANDON' and self.second_nic_id is not None:
             self.ec2_client.delete_network_interface(NetworkInterfaceId=self.second_nic_id)
+        if self.lch_name == 'None' or self.lch_token == 'None':
+            return
         try:
             self.auto_scale_group.asg_client.complete_lifecycle_action(LifecycleHookName=self.lch_name,
                                                                        AutoScalingGroupName=self.auto_scale_group.name,
