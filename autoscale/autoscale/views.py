@@ -567,6 +567,31 @@ def sns(request):
                 logger.exception('sns(): Notification Not Valid JSON: {}'.format(data['Message']))
                 return HttpResponseBadRequest('Not Valid JSON')
             if 'Event' in msg and msg['Event'] == 'autoscaling:TEST_NOTIFICATION':
+                try:
+                    t = g.db_client.describe_table(TableName=asg_name)
+                    if 'ResponseMetadata' in t:
+                        if t['ResponseMetadata']['HTTPStatusCode'] == STATUS_OK:
+                            table_found = True
+                except g.db_client.exceptions.ResourceNotFoundException:
+                    logger.debug("process_autoscale_group_exception_1()")
+                    table_found = False
+                if table_found is True:
+                    logger.info("process_autoscale_group(4): FOUND autoscale scale group table")
+                    mt = g.db_resource.Table(asg_name)
+                    try:
+                        a = mt.get_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
+                    except g.db_client.exceptions.ResourceNotFoundException:
+                        logger.exception("process_autoscale_group()")
+                        return
+                if 'Item' in a and 'UpdateCounts' in a['Item']:
+                    item = a['Item']
+                    if item['UpdateCounts'] == 'True':
+                        logger.info("process_autoscale_group(7): UPDATING Autoscale Group Counts")
+                        counts_updated = False
+                        while counts_updated is False:
+                            counts_updated = g.update_instance_counts()
+                        item['UpdateCounts'] = 'False'
+                        mt.put_item(Item=item)
                 return HttpResponse(0)
             g = AutoScaleGroup(data)
             g.write_to_db(data, url)

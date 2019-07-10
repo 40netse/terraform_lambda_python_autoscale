@@ -45,6 +45,7 @@ class AutoScaleGroup(object):
         self.account = None
         self.target_group = None
         self.cft_password = None
+        self.asg_byol_min_size = None
         if data is not None:
             p = data['TopicArn'].split(':')
             if len(p) != 6:
@@ -78,6 +79,8 @@ class AutoScaleGroup(object):
                 value = v['ParameterValue']
                 if key == 'Password':
                     self.cft_password = value
+                if key == 'ASGBYOLMinSize':
+                    self.asg_byol_min_size = value
         if data is not None:
             if data['Type'] == 'Notification':
                 self.table = self.db_resource.Table(self.name)
@@ -271,7 +274,14 @@ class AutoScaleGroup(object):
         object_key = l['TypeId']
         s3c = self.s3_client
         f = object_key.split('/')
-        file = '/tmp/' + f[1]
+        fp = None
+        for file_path in f:
+            if file_path.endswith('.lic'):
+                fp = file_path
+                break
+        if fp is None:
+            return None
+        file = '/tmp/' + fp
         with open(file, 'wb') as content:
             try:
                 status = s3c.download_fileobj(bucket, object_key, content)
