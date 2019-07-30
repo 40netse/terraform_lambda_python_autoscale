@@ -616,8 +616,8 @@ def callback(request):
     if request.method != 'POST':
         raise Http404
     rpath = request.path
-    a, b, c, d = rpath.split("/")
-    group = d
+    callback_path = rpath.split('/')
+    group = callback_path[len(callback_path) - 1]
     request_body = request.body
     if request_body is not None and request_body != '':
         i = json.loads(request_body)
