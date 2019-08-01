@@ -151,55 +151,22 @@ class AutoScaleGroup(object):
 
     def get_secret(self, secret_name):
 
-        # Create a Secrets Manager client
-        session = boto3.session.Session()
-        client = session.client(
-            service_name='secretsmanager',
-            region_name=session.region_name
-        )
-
-        # In this sample we only handle the specific exceptions for the 'GetSecretValue' API.
-        # See https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
-        # We rethrow the exception by default.
+        client = boto3.client('ssm')
 
         try:
-            get_secret_value_response = client.get_secret_value(
-                SecretId=secret_name
-            )
-        except ClientError as e:
-            if e.response['Error']['Code'] == 'DecryptionFailureException':
-                # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
-                # Deal with the exception here, and/or rethrow at your discretion.
-                raise e
-            elif e.response['Error']['Code'] == 'InternalServiceErrorException':
-                # An error occurred on the server side.
-                # Deal with the exception here, and/or rethrow at your discretion.
-                raise e
-            elif e.response['Error']['Code'] == 'InvalidParameterException':
-                # You provided an invalid value for a parameter.
-                # Deal with the exception here, and/or rethrow at your discretion.
-                raise e
-            elif e.response['Error']['Code'] == 'InvalidRequestException':
-                # You provided a parameter value that is not valid for the current state of the resource.
-                # Deal with the exception here, and/or rethrow at your discretion.
-                raise e
-            elif e.response['Error']['Code'] == 'ResourceNotFoundException':
-                # We can't find the resource that you asked for.
-                # Deal with the exception here, and/or rethrow at your discretion.
-                raise e
-        else:
-            # Decrypts secret using the associated KMS CMK.
-            # Depending on whether the secret is a string or binary, one of these fields will be populated.
-            if 'SecretString' in get_secret_value_response:
-                s = get_secret_value_response['SecretString']
-                secret_string = re.sub('[/]', '', secret_name)
-                match_string = '{"' + secret_string + '":"(.*?)"}'
-                s1 = re.search(match_string, s)
-                s2 = s1.group(1)
-                return s2
-            else:
-                decoded_binary_secret = base64.b64decode(get_secret_value_response['SecretBinary'])
-                return decoded_binary_secret
+            r = client.get_parameter(Name=secret_name, WithDecryption=True)
+        except Exception as error:
+            logger.error('<--!! Exception: {}'.format(error))
+            return None
+        if 'ResponseMetadata' not in r:
+            return None
+        if 'HTTPStatusCode' not in r['ResponseMetadata']:
+            return None
+        if r['ResponseMetadata']['HTTPStatusCode'] != STATUS_OK:
+            return None
+        if 'Parameter' in r and 'Name' in r['Parameter'] and 'Value' in r['Parameter']:
+            if r['Parameter']['Name'] == secret_name:
+                return r['Parameter']['Value']
 
     def update_asg_info(self):
         try:
@@ -603,7 +570,7 @@ class AutoScaleGroup(object):
             logger.info('lch_launch_instance(1b): Instance Not ready to go InService. i = %s ' % f.instance_id)
             return STATUS_NOT_OK
 
-        if self.cft_password == '':
+        if self.cft_password == '' or self.cft_password is None:
             self.cft_password = self.get_secret(self.SsmSecret)
         key = 'Fortigate-License'
         license_type = f.get_tag(key)
