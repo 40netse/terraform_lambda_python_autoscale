@@ -437,7 +437,6 @@ def sns(request):
     # and it will not be responded to. The second request will have an ACTIVE table and the subscription request
     # will be responded to and start the flow of Autoscale Messages.
     #
-
     if data['Type'] == 'SubscriptionConfirmation':
         master_table_found = False
         asg_table_found = False
@@ -560,6 +559,8 @@ def sns(request):
         #
         # if this is a TEST_NOTIFICATION, just respond 200. Autoscale group is likely in te process of being created
         #
+        g = AutoScaleGroup(data)
+        asg_name = self.name
         if 'Message' in data:
             try:
                 msg = json.loads(data['Message'])
