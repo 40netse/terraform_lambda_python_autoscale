@@ -265,7 +265,7 @@ def process_autoscale_group(asg_name):
 
 @csrf_exempt
 def start_scheduled(event, context):
-    logger.info("start_scheduled(): =============== start ============")
+    logger.info("start_scheduled(): =============== start start_scheduled ============")
     extra = "fortinet_autoscale_"
     account = event['account']
     region = event['region']
@@ -396,7 +396,7 @@ def index(request):
 
 @csrf_exempt
 def sns(request):
-    logger.info("sns(): =============== start ============")
+    logger.info("sns(): =============== start sns ============")
     if request.method != 'POST':
         return HttpResponseBadRequest('Only POST Requests Accepted')
     body = request.body
@@ -560,7 +560,7 @@ def sns(request):
         # if this is a TEST_NOTIFICATION, just respond 200. Autoscale group is likely in te process of being created
         #
         g = AutoScaleGroup(data)
-        asg_name = self.name
+        asg_name = g.name
         if 'Message' in data:
             try:
                 msg = json.loads(data['Message'])
