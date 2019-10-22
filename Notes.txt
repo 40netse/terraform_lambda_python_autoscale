@@ -20,3 +20,5 @@ sudo snap install terraform
 terraform init
 terraform apply
 apt-get install awscli
+
+aws.corp.fortinet.com
