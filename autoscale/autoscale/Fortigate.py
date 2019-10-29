@@ -339,13 +339,15 @@ class Fortigate(object):
         #
         # Something is wrong with the metadata. Check the cloudformation template or terraform.
         #
-        if len(subnets) != 4:
+        subnet_len = len(subnets)
+        if len(subnets) < 4:
             self.lch_action('ABANDON')
             return STATUS_NOT_OK
-        if self.public_subnet_id == subnets[0]:
-            self.private_subnet_id = subnets[1]
-        if self.public_subnet_id == subnets[2]:
-            self.private_subnet_id = subnets[3]
+        for x in range(subnet_len):
+            m = x % 2
+            if m == 0:
+                if self.public_subnet_id == subnets[x]:
+                    self.private_subnet_id = subnets[x + 1]
         nic = self.ec2_client.create_network_interface(Groups=[self.sg],
                                                        SubnetId=self.private_subnet_id,
                                                        Description='Second Network Interface')
