@@ -434,9 +434,9 @@ class AutoScaleGroup(object):
 
         return
 
-    def lch_launch_timer(asg, instance_id):
+    def lch_launch_timer(self, f, instance_id):
         try:
-            r = asg.ec2_client.describe_instance_status(InstanceIds=[instance_id])
+            r = self.ec2_client.describe_instance_status(InstanceIds=[instance_id])
             logger.info("process_autoscale_group(20a): Found InService Instance = %s" % instance_id)
         except Exception as ex:
             logger.exception('lch_launch_timer() EXCEPTION instance id(): ex = %s' % ex)
@@ -546,7 +546,7 @@ class AutoScaleGroup(object):
             self.private_subnet_id = instance['PrivateSubnetId']
         logger.info('lch_launch_instance_retry(5): master_ip = %s' % instance)
         self.table.put_item(Item=instance)
-        logger.info('lch_launch_instance(5a):')
+        logger.info('lch_launch_instance_retry(5a):')
         f.add_member_to_autoscale_group(self.master_ip)
         logger.info('lch_launch_instance_retry(6): master_ip = %s' % self.master_ip)
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:

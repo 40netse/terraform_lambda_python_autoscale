@@ -248,7 +248,7 @@ def process_autoscale_group(asg_name):
                             except g.db_client.exceptions.ResourceNotFoundException:
                                 logger.info('process_autoscale_group delete item(): Not Found id = %s' %
                                             instance_id)
-                        g.lch_launch_timer(g, instance_id)
+                        g.lch_launch_timer(f, instance_id)
 
     g.verify_byol_licenses()
     g.verify_route_tables()
