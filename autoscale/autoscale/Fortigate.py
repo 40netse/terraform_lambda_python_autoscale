@@ -1,6 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
 import json
+import time
 from .const import *
 import base64
 import tempfile
@@ -339,13 +340,15 @@ class Fortigate(object):
         #
         # Something is wrong with the metadata. Check the cloudformation template or terraform.
         #
-        if len(subnets) != 4:
+        subnet_len = len(subnets)
+        if len(subnets) < 4:
             self.lch_action('ABANDON')
             return STATUS_NOT_OK
-        if self.public_subnet_id == subnets[0]:
-            self.private_subnet_id = subnets[1]
-        if self.public_subnet_id == subnets[2]:
-            self.private_subnet_id = subnets[3]
+        for x in range(subnet_len):
+            m = x % 2
+            if m == 0:
+                if self.public_subnet_id == subnets[x]:
+                    self.private_subnet_id = subnets[x + 1]
         nic = self.ec2_client.create_network_interface(Groups=[self.sg],
                                                        SubnetId=self.private_subnet_id,
                                                        Description='Second Network Interface')
@@ -389,6 +392,22 @@ class Fortigate(object):
         self.update_ec2_info()
         name1 = self.auto_scale_group.name + "_AutoScale_" + self.instance_id + "_ENI0"
         name2 = self.auto_scale_group.name + "_AutoScale_" + self.instance_id + "_ENI1"
+        #
+        # Everything looks good. TAG the interfaces and complete the LifeCycleAction
+        #
+        wait_for_attached_interfaces = 3
+        while wait_for_attached_interfaces > 0:
+            if len(self.ec2['NetworkInterfaces']) < 2:
+                time.sleep(1)
+                wait_for_attached_interfaces = wait_for_attached_interfaces - 1
+                self.update_ec2_info()
+                logger.info("waiting for attached interfaces().")
+            else:
+                wait_for_attached_interfaces = 0
+        if len(self.ec2['NetworkInterfaces']) < 2:
+            self.lch_action('ABANDON')
+            self.ec2_client.delete_network_interface(NetworkInterfaceId=self.second_nic_id)
+            return None
         #
         # Everything looks good. TAG the interfaces and complete the LifeCycleAction
         #
