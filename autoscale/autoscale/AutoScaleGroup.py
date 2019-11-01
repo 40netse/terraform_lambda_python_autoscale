@@ -657,7 +657,7 @@ class AutoScaleGroup(object):
             t = self.table
             item = {"Type": TYPE_ENI_ID, "TypeId": eni,
                     "AutoScaleGroupName": self.name,
-                                         "LifecycleHookName": self.lch_name, "LifecycleToken": self.lch_token,
+                                         "LifecycleHookName": f.lch_name, "LifecycleToken": f.lch_token,
                                          "ENIId": eni}
             t.put_item(Item=item)
         new_master_pip = None
