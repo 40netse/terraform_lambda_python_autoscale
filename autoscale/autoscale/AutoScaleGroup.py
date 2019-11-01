@@ -518,6 +518,8 @@ class AutoScaleGroup(object):
         if f.auto_scale_group is None:
             return
         f.detach_second_interface()
+        if f.lch_token is not None:
+            f.lch_action('CONTINUE')
         return STATUS_OK
 
     def remove_master(self, instance_id):
@@ -632,6 +634,7 @@ class AutoScaleGroup(object):
         rc = f.add_member_to_autoscale_group(self.master_ip, self.cft_password)
         if rc == -1:
             logger.info('lch_launch_instance5a(): DB instance = %s failed to add to autoscale group' % instance)
+            self.ec2_client.terminate_instances(InstanceIds=[f.instance_id])
             return STATUS_NOT_OK
         instance['State'] = 'InService'
         self.table.put_item(Item=instance)
@@ -649,7 +652,9 @@ class AutoScaleGroup(object):
         except self.db_client.exceptions.ResourceNotFoundException:
             r = None
         if r is None or 'Item' not in r:
-            logger.info('lch_launch_instance(1a):')
+            logger.info('lch_launch_instance(1a): lch_token = %s' % f.lch_token)
+            if f.lch_token is not None:
+                f.lch_action('CONTINUE')
             return STATUS_OK
         instance = r['Item']
         if 'SecondENIId' in instance:

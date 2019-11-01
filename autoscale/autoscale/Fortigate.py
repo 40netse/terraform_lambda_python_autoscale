@@ -304,7 +304,7 @@ class Fortigate(object):
                 self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
             except Exception as ex:
                 logger.exception("login.exception(): message = %s, instance = %s" % (ex, self.instance_id))
-                return
+                return -1
             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
             try:
                 msg = json.loads(content)
@@ -405,6 +405,16 @@ class Fortigate(object):
             else:
                 wait_for_attached_interfaces = 0
         if len(self.ec2['NetworkInterfaces']) < 2:
+            self.lch_action('ABANDON')
+            self.ec2_client.delete_network_interface(NetworkInterfaceId=self.second_nic_id)
+            return None
+        if 'PrivateIpAddress' not in self.ec2['NetworkInterfaces'][0] or \
+                self.ec2['NetworkInterfaces'][0]['PrivateIpAddress'] == '0.0.0.0':
+            self.lch_action('ABANDON')
+            self.ec2_client.delete_network_interface(NetworkInterfaceId=self.second_nic_id)
+            return None
+        if 'PrivateIpAddress' not in self.ec2['NetworkInterfaces'][1] or \
+                self.ec2['NetworkInterfaces'][1]['PrivateIpAddress'] == '0.0.0.0':
             self.lch_action('ABANDON')
             self.ec2_client.delete_network_interface(NetworkInterfaceId=self.second_nic_id)
             return None
