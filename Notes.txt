@@ -21,4 +21,5 @@ terraform init
 terraform apply
 apt-get install awscli
 
-aws.corp.fortinet.com
+Command to generate testing certificate: openssl req -newkey rsa:2048 -nodes -keyout mdw_key.pem -x509 -days 365 -out mdw_cert.pem
+

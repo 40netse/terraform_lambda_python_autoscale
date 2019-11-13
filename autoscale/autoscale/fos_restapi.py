@@ -14,10 +14,11 @@ import json
 
 
 class FortiOSREST(object):
-    def __init__(self):
+    def __init__(self, admin_sport):
         self._debug = False
         self._http_debug = False
         self._https = True
+        self.admin_sport = admin_sport
         self.host = None
         self.url_prefix = None
         self._session = requests.session()  # use single session for all requests
@@ -100,9 +101,9 @@ class FortiOSREST(object):
     def login(self, host, username, password):
         self.host = host
         if self._https is True:
-            self.url_prefix = 'https://' + self.host
+            self.url_prefix = 'https://' + self.host + ":" + str(self.admin_sport)
         else:
-            self.url_prefix = 'http://' + self.host
+            self.url_prefix = 'http://' + self.host + ":" + str(self.admin_sport)
         url = self.url_prefix + '/logincheck'
         res = self._session.post(url,
                                  data='username=' + username + '&secretkey=' + password,

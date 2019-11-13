@@ -30,7 +30,6 @@ class AutoScaleGroup(object):
         self.endpoint_url = None
         self.master_ip = None
         self.private_subnet_id = None
-        self.api = None
         self.cft_resource = boto3.resource('cloudformation')
         self.cft_client = boto3.client('cloudformation')
         self.db_resource = boto3.resource('dynamodb')
@@ -74,6 +73,12 @@ class AutoScaleGroup(object):
                             self.target_group = self.asg['TargetGroup']
         self.update_asg_info()
         self.stack_name = self.get_tag('aws:cloudformation:stack-name')
+        sport = self.get_tag('Fortigate-Admin-Sport')
+        if sport is None:
+            self.admin_sport = 443
+        else:
+            self.admin_sport = int(sport)
+        self.api = FortiOSAPI(self.admin_sport)
         if self.stack_name is not None:
             c = self.cft_resource.Stack(self.stack_name)
             for v in (c.parameters):
@@ -197,27 +202,18 @@ class AutoScaleGroup(object):
         return None
 
     #
-    # This is used during a subscription notification to update the min,desired counts in the Autoscale Group
-    # during Development, set the min=1 to save EC2 expense
-    # during Production, set the min = the number of AZ to provide AZ redundancy
+    # This is used to delay the creation of instances until the TEST_NOTIFICATION is sent. TEST_NOTIFICATION
+    # indicates that the SNS Subscription is valid and SNS Notifications will not be lost and cause
+    # initial instances to get stuck in Pending::WAIT state.
     #
     def update_instance_counts(self):
-        value = self.get_tag('Fortigate-License')
-        if value != 'byol':
-            return
-        size = 0
-        aws_asg = self.asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.name])
-        if 'AutoScalingGroups' in aws_asg:
-                if len(aws_asg['AutoScalingGroups']) == 0:
-                    time.sleep(3)
-                    return False
-                if len(aws_asg['AutoScalingGroups']) > 0:
-                    size = len(aws_asg['AutoScalingGroups'][0]['AvailabilityZones'])
-        #
-        # TODO: change back to size for production
-        #
-        size = len(aws_asg)
-        logger.debug('update_instance_count: name = %s, size = %d' % (self.name, size))
+        min_size = self.get_tag('Fortigate-AutoScale-Group-MinSize')
+        logger.info('Fortigate-AutoScale-Group-MinSize: min_size = %s' % min_size)
+        if min_size is None:
+            size = 0
+        else:
+            size = int(min_size)
+        logger.info('update_instance_count: name = %s, size = %d' % (self.name, size))
         try:
             self.asg_client.update_auto_scaling_group(AutoScalingGroupName=self.name,
                                                       MinSize=size, DesiredCapacity=size)
@@ -249,6 +245,32 @@ class AutoScaleGroup(object):
                         return
                     if 'Table' in t and 'TableStatus' in t['Table']:
                         self.status = t['Table']['TableStatus']
+
+    def find_s3_cert_file(self, bucket):
+        logger.info("find_s3_license_file(1): bucket = %s" % bucket)
+        if bucket is None:
+            return None
+        s3c = self.s3_client
+        if s3c is None:
+            return None
+        s3buckets = s3c.list_buckets()
+        s3lbucket_exists = False
+        if 'Buckets' in s3buckets:
+            for b in s3buckets['Buckets']:
+                if 'Name' in b:
+                    if b['Name'] == bucket:
+                        s3lbucket_exists = True
+                        break
+        if s3lbucket_exists is False:
+            return None
+        objects = s3c.list_objects(Bucket=bucket)
+        if 'Contents' not in objects:
+            return None
+        for o in objects['Contents']:
+            logger.info("find_s3_license_file(6): object = %s" % o['Key'])
+            suffix = o['Key'].split('.')
+            if len(suffix) == 2 and suffix[1] == 'cert':
+                self.write_license_to_db(bucket, o['Key'])
 
     def find_s3_license_file(self, bucket):
         logger.info("find_s3_license_file(1): bucket = %s" % bucket)
@@ -321,7 +343,6 @@ class AutoScaleGroup(object):
         elif 'PrivateIpAddress' in self.ec2:
             ip = fortigate.ec2['PrivateIpAddress']
         instance_id = fortigate.instance_id
-        fortigate.api = FortiOSAPI()
         status = fortigate.api.login(ip, 'admin', self.cft_password)
         if status == -1:
             logger.info("PutLicense failed: %s status = %s" % (fortigate.instance_id, status))
@@ -420,10 +441,26 @@ class AutoScaleGroup(object):
             if status == STATUS_OK:
                 if 'Item' in r:
                     if notification_type == 'SubscriptionConfirmation':
-                        #
-                        # Already subscribed. Why are we getting this?
-                        #
-                        self.asg = r['Item']
+                        self.asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000",
+                                    "AutoScaleGroupName": self.name, "SubscribeURL": subscribe_url,
+                                    "TimeStamp": data['Timestamp'], "UpdateCountdown": 3}
+                        if url is not None:
+                            self.asg.update({"EndPointUrl": url})
+                        target_group = self.get_tag('Fortigate-Target-Group-Name')
+                        if target_group is not None:
+                            self.asg.update({"TargetGroup": target_group})
+                        else:
+                            self.asg.update({"TargetGroup": self.name})
+                        try:
+                            r = self.table.put_item(Item=self.asg)
+                        except self.db_client.exceptions.ResourceNotFoundException:
+                            return
+                        if r is not None and 'ResponseMetadata' in r:
+                            if 'HTTPStatusCode' in r['ResponseMetadata']:
+                                status = r['ResponseMetadata']['HTTPStatusCode']
+                                if status != STATUS_OK:
+                                    self.asg = None
+                                self.status = 'ACTIVE'
                         return
                     elif notification_type == 'Notification':
                         self.asg = r['Item']
@@ -443,7 +480,7 @@ class AutoScaleGroup(object):
         if self.asg is None:
             self.asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000",
                         "AutoScaleGroupName": self.name, "SubscribeURL": subscribe_url,
-                        "TimeStamp": data['Timestamp'], "UpdateCounts": "False"}
+                        "TimeStamp": data['Timestamp'], "UpdateCountdown": 3}
             if url is not None:
                 self.asg.update({"EndPointUrl": url})
             target_group = self.get_tag('Fortigate-Target-Group-Name')
@@ -561,13 +598,13 @@ class AutoScaleGroup(object):
         if f.auto_scale_group is None:
             return STATUS_OK
         try:
-            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
+            i = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
         except self.db_client.exceptions.ResourceNotFoundException:
-            r = None
-        if r is None or 'Item' not in r:
+            i = None
+        if i is None or 'Item' not in i:
             logger.info('lch_launch_instance(1a):')
             return STATUS_OK
-        instance = r['Item']
+        instance = i['Item']
         if instance['State'] == 'LCH_LAUNCH':
             logger.info('lch_launch_instance(1b): Instance Not ready to go InService. i = %s ' % f.instance_id)
             return STATUS_NOT_OK
@@ -576,13 +613,7 @@ class AutoScaleGroup(object):
             self.cft_password = self.get_secret(self.SsmSecret)
         key = 'Fortigate-License'
         license_type = f.get_tag(key)
-        try:
-            r = self.table.get_item(TableName=self.name, Key={"Type": TYPE_INSTANCE_ID, "TypeId": f.instance_id})
-        except self.db_client.exceptions.ResourceNotFoundException:
-            r = None
-        if r is None or 'Item' not in r:
-            return STATUS_NOT_OK
-        instance = r['Item']
+        instance = i['Item']
         license_applied = False
         if instance['State'] == 'ADD_TO_AUTOSCALE_GROUP':
             license_applied = True
@@ -603,22 +634,29 @@ class AutoScaleGroup(object):
 
                             )
                 return STATUS_OK
-            instance = r['Item']
             instance['State'] = 'ADD_TO_AUTOSCALE_GROUP'
+            instance['CountDown'] = 60
             self.table.put_item(Item=instance)
             return STATUS_NOT_OK
 
         try:
-            r2 = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
+            asg = self.table.get_item(TableName=self.name, Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"})
         except self.db_client.exceptions.ResourceNotFoundException:
-            r2 = None
+            asg = None
+        if instance['State'] == 'ADD_TO_AUTOSCALE_GROUP' and instance['CountDown'] > 0:
+            logger.info('lch_launch_instance2(): waiting for license reboot countdown = %d' % instance['CountDown'])
+            return STATUS_NOT_OK
         self.remove_master(f.instance_id)
-        if (r2 is not None) and ('Item' in r) and ('MasterIp' in r2['Item']):
-            is_instance_master = False
-            self.master_ip = r2['Item']['MasterIp']
+        if (asg is not None) and ('Item' in asg) and ('MasterIp' in asg['Item']):
+            #
+            # This is a slave
+            #
+            self.master_ip = asg['Item']['MasterIp']
             logger.info('lch_launch_instance4(): slave info master_ip = %s' % self.master_ip)
         else:
-            is_instance_master = True
+            #
+            # This is the master
+            #
             self.master_ip = f.ec2['PrivateIpAddress']
             logger.info('lch_launch_instance4a(): master_ip = %s' % self.master_ip)
             self.table.update_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": "0000"},
@@ -627,7 +665,6 @@ class AutoScaleGroup(object):
                                                               ':p': f.ec2['InstanceId']})
             self.asg.update([('MasterId', f.ec2['InstanceId'])])
             logger.info('lch_launch_instance4b(): master info master_ip = %s' % self.master_ip)
-        instance = r['Item']
         if 'PrivateSubnetId' in instance:
             self.private_subnet_id = instance['PrivateSubnetId']
         logger.info('lch_launch_instance5(): DB instance = %s' % instance)
@@ -640,6 +677,9 @@ class AutoScaleGroup(object):
         self.table.put_item(Item=instance)
         logger.info('lch_launch_instance6(): State = %s' % instance['State'])
         if 'MasterId' in self.asg and f.ec2['InstanceId'] == self.asg['MasterId']:
+            # key = 'Fortigate-S3-License-Bucket'
+            # license_bucket = f.get_tag(key)
+            # f.load_vpn_certificates(license_bucket)
             logger.info('lch_launch_instance7(): ADDING MASTER')
         else:
             logger.info('lch_launch_instance7(): ADDING SLAVE')
@@ -718,7 +758,6 @@ class AutoScaleGroup(object):
                                   "callback-url": callback_url
                             }
                             logger.info('posting auto-scale config: {}' .format(data))
-                            self.api = FortiOSAPI()
                             self.api.login(new_master_eip, 'admin', self.cft_password)
                             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
                             self.api.logout()
@@ -754,7 +793,6 @@ class AutoScaleGroup(object):
                                   "callback-url": callback_url
                             }
                             logger.info('posting auto-scale config: {}' .format(data))
-                            self.api = FortiOSAPI()
                             self.api.login(existing_slave_eip, 'admin', self.cft_password)
                             content = self.api.put(api='cmdb', path='system', name='auto-scale', data=data)
                             self.api.logout()

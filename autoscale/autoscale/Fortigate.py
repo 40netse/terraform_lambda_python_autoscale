@@ -6,7 +6,6 @@ from .const import *
 import base64
 import tempfile
 import urllib3
-from .fos_api import FortiOSAPI
 from urllib.parse import urlparse
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -33,7 +32,7 @@ class Fortigate(object):
         self.second_nic_id = None
         self.private_subnet_id = None
         self.auto_scale_group = asg
-        self.api = None
+        self.api = asg.api
         self.sg = None
         self.instance_id = None
         self.ec2_client = asg.ec2_client
@@ -124,7 +123,6 @@ class Fortigate(object):
             ip = self.ec2['PublicIpAddress']
         elif 'PrivateIpAddress' in self.ec2:
             ip = self.ec2['PrivateIpAddress']
-        self.api = FortiOSAPI()
         self.api.login(ip, 'admin', password)
         content = self.api.get(api='monitor', path='system', name='firmware', action='select', mkey=None)
         data = json.loads(content)
@@ -146,6 +144,70 @@ class Fortigate(object):
         #
         self.config_firewall()
         return
+
+    # def write_certificate_to_master(self, bucket, key):
+    #     logger.info("write_certificate_to_master(1): bucket = %s, key = %s" % (bucket, key))
+    #     broken right here
+    #     # bucket = l['Bucket']
+    #     # object_key = l['TypeId']
+    #     # s3c = self.s3_client
+    #     # f = object_key.split('/')
+    #     # fp = None
+    #     # for file_path in f:
+    #     #     if file_path.endswith('.lic'):
+    #     #         fp = file_path
+    #     #         break
+    #     # if fp is None:
+    #     #     return None
+    #     # file = '/tmp/' + fp
+    #     # with open(file, 'wb') as content:
+    #     #     try:
+    #     #         status = s3c.download_fileobj(bucket, object_key, content)
+    #     #     except Exception as ex:
+    #     #         logger.exception("caught: %s with PutLicenseInfo" % ex.message)
+    #     # b64lic = base64.b64encode(open(file).read().encode()).decode()
+    #     # ip = None
+    #     # if 'PublicIpAddress' in fortigate.ec2:
+    #     #     ip = fortigate.ec2['PublicIpAddress']
+    #     # elif 'PrivateIpAddress' in self.ec2:
+    #     #     ip = fortigate.ec2['PrivateIpAddress']
+    #     # instance_id = fortigate.instance_id
+    #     # status = fortigate.api.login(ip, 'admin', self.cft_password)
+    #     # if status == -1:
+    #     #     logger.info("PutLicense failed: %s status = %s" % (fortigate.instance_id, status))
+    #     #     return status
+    #     # status = fortigate.api.post(api='monitor', path='system', name='vmlicense',
+    #     #                             action='upload', data={"file_content": b64lic})
+    #     # logger.info("PutLicense: %s status = %s, file = %s" % (fortigate.instance_id, status, file))
+    #     # self.write_license_to_db(bucket=bucket, key=l['TypeId'], instance_id=instance_id)
+    #     # return status
+    #
+    #
+    # def load_vpn_certificates(self, bucket):
+    #     logger.info("find_vpn_certificates_file(1): bucket = %s" % bucket)
+    #     if bucket is None:
+    #         return None
+    #     s3c = self.s3_client
+    #     if s3c is None:
+    #         return None
+    #     s3buckets = s3c.list_buckets()
+    #     s3lbucket_exists = False
+    #     if 'Buckets' in s3buckets:
+    #         for b in s3buckets['Buckets']:
+    #             if 'Name' in b:
+    #                 if b['Name'] == bucket:
+    #                     s3lbucket_exists = True
+    #                     break
+    #     if s3lbucket_exists is False:
+    #         return None
+    #     objects = s3c.list_objects(Bucket=bucket)
+    #     if 'Contents' not in objects:
+    #         return None
+    #     for o in objects['Contents']:
+    #         logger.info("find_s3_vpn_certificate_file(6): object = %s" % o['Key'])
+    #         suffix = o['Key'].split('.')
+    #         if len(suffix) == 3 and suffix[1] == 'cert' and suffix[2] == 'pem':
+    #             self.write_certificate_to_master(bucket, o['Key'])
 
     def update_ec2_info(self):
         self.ec2 = None
@@ -272,7 +334,6 @@ class Fortigate(object):
                   "callback-url": callback_url
             }
             logger.info('posting auto-scale config: {}' .format(data))
-            self.api = FortiOSAPI()
             try:
                 status = self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
             except Exception as ex:
@@ -299,7 +360,6 @@ class Fortigate(object):
                   "callback-url": callback_url
             }
             logger.info('posting auto-scale config: {}' .format(data))
-            self.api = FortiOSAPI()
             try:
                 self.api.login(self.ec2['PublicIpAddress'], 'admin', password)
             except Exception as ex:

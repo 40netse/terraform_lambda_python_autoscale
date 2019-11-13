@@ -161,14 +161,17 @@ def process_autoscale_group(asg_name):
         if a is not None and 'Item' in a and 'MasterId' in a['Item']:
             instance_id = a['Item']['MasterId']
             g.remove_master(instance_id)
-        if 'Item' in a and 'UpdateCounts' in a['Item']:
+        if 'Item' in a and 'UpdateCountdown' in a['Item']:
             item = a['Item']
-            if item['UpdateCounts'] == 'True':
+            if item['UpdateCountdown'] > 1:
+                item['UpdateCountdown'] = item['UpdateCountdown'] - 1
+                mt.put_item(Item=item)
+            if item['UpdateCountdown'] == 1:
                 logger.info("process_autoscale_group(7): UPDATING Autoscale Group Counts")
                 counts_updated = False
                 while counts_updated is False:
                     counts_updated = g.update_instance_counts()
-                item['UpdateCounts'] = 'False'
+                item['UpdateCountdown'] = 0
                 mt.put_item(Item=item)
         logger.info("process_autoscale_group(5):")
         try:
@@ -191,7 +194,7 @@ def process_autoscale_group(asg_name):
                 for i in instances['Items']:
                     logger.info("process_autoscale_group(11): state = %s, countdown = %d" %
                                 (i['State'], i['CountDown']))
-                    if 'State' in i and i['State'] == "LCH_LAUNCH":
+                    if 'State' in i and (i['State'] == "LCH_LAUNCH" or i['State'] == "ADD_TO_AUTOSCALE_GROUP"):
                         if 'CountDown' in i and i['CountDown'] > 0:
                             value = i['CountDown']
                             value = value - 60
@@ -257,6 +260,20 @@ def process_autoscale_group(asg_name):
                                             instance_id)
     g.verify_byol_licenses()
     return
+
+#
+# If the autoscale group doesn't exist in AWS, delete the record in the master table and
+# delete the autoscale group table in DynamoDB
+#
+
+
+def cleanup_database(master_table, asg_group):
+    logger.info("cleanup_database(): %s" % asg_group)
+    dbc = boto3.client('dynamodb')
+    master_table.delete_item(Key={"Type": TYPE_AUTOSCALE_GROUP, "TypeId": asg_group})
+    dbc.delete_table(TableName=asg_group)
+
+
 #
 # this function is only called via lambda due to a periodic cloudwatch cron
 # see zappa_settings.json for configuration
@@ -265,12 +282,13 @@ def process_autoscale_group(asg_name):
 
 @csrf_exempt
 def start_scheduled(event, context):
-    logger.info("start_scheduled(): =============== start start_scheduled ============")
+    logger.info("start_scheduled(): =============== start start_scheduled 1.8 ============")
     extra = "fortinet_autoscale_"
     account = event['account']
     region = event['region']
     master_table_name = extra + region + "_" + account
     logger.debug("start_scheduled(): master_table_name = %s" % master_table_name)
+    asg_client = boto3.client('autoscaling')
     dbc = boto3.client('dynamodb')
     dbr = boto3.resource('dynamodb')
     t = dbc.list_tables()
@@ -309,12 +327,23 @@ def start_scheduled(event, context):
             r = mt.query(KeyConditionExpression=Key('Type').eq(TYPE_AUTOSCALE_GROUP))
         except dbc.exceptions.ResourceNotFoundException:
             logger.exception("start_scheduled_except_2()")
-            return
+            re
         if 'Items' in r:
             logger.debug("found items in r:")
             if len(r['Items']) > 0:
                 for asg in r['Items']:
                     logger.info("start_scheduled() FOUND autoscale group = %s" % asg['TypeId'])
+                    group_name = asg['TypeId']
+                    try:
+                        r = asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[group_name])
+                    except Exception as ex:
+                        logger.exception("exeception start_scheduled() - describe_auto_scaling_groups(): ex = %s" % ex)
+                        cleanup_database(mt, group_name)
+                        return
+                    if len(r['AutoScalingGroups']) == 0:
+                        logger.info("start_scheduled6(): cleanup_autoscale_group_database = %s" % group_name)
+                        cleanup_database(mt, group_name)
+                        return
                     process_autoscale_group(asg['TypeId'])
     return
 
@@ -325,7 +354,7 @@ def start_scheduled(event, context):
 
 @csrf_exempt
 def start(event):
-    logger.info("start(): event = %s" % event)
+    # logger.info("start(): event = %s" % event)
     if event.method != 'POST':
         raise Http404
     data = None
@@ -396,7 +425,7 @@ def index(request):
 
 @csrf_exempt
 def sns(request):
-    logger.info("sns(): =============== start sns ============")
+    logger.info("sns(): =============== start sns 1.8 ============")
     if request.method != 'POST':
         return HttpResponseBadRequest('Only POST Requests Accepted')
     body = request.body
@@ -405,7 +434,7 @@ def sns(request):
     except ValueError:
         logger.info('sns(): Notification Not Valid JSON: {}'.format(body))
         return HttpResponseBadRequest('Not Valid JSON')
-    #logger.info("sns(): request = %s" % (json.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))))
+    logger.info("sns(): request = %s" % (json.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))))
     if 'Type' in data and data['Type'] != 'SubscriptionConfirmation':
         if 'Message' in data:
             try:
@@ -418,7 +447,7 @@ def sns(request):
         return HttpResponseBadRequest('Not Valid JSON')
     url = None
     if 'HTTP_HOST' in request.META:
-        #logger.info("sns(): http_host = %s" % request.META['HTTP_HOST'])
+        logger.info("sns(): http_host = %s" % request.META['HTTP_HOST'])
         host_url = request.META['HTTP_HOST']
         try:
             u, port = host_url.split(':')
@@ -491,7 +520,7 @@ def sns(request):
                         return response
         logger.info("Writing Master Table: auto scale group %s" % g.name)
         mt = g.db_resource.Table(master_table_name)
-        asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": g.name, "LicenseCountdown": 5}
+        asg = {"Type": TYPE_AUTOSCALE_GROUP, "TypeId": g.name, "UpdateCountdown": 3}
         master_table_written = False
         while master_table_written is False:
             try:
@@ -552,16 +581,19 @@ def sns(request):
             logger.info('SubscriptionConfirmation respond_to_subscription request()')
             return respond_to_subscription_request(request)
 
-        #
-        # Handle the following NOTIFICATION TYPES: TEST, EC2_LCH_Launch, EC2_Launch, EC2_LCH_Terminate, EC2_Terminate
-        #
-    if request.method == 'POST' and 'Type' in data and data['Type'] == 'Notification':
+    #
+    # Handle the following NOTIFICATION TYPES: TEST, EC2_LCH_Launch, EC2_Launch, EC2_LCH_Terminate, EC2_Terminate
+    #
+    if 'Type' in data and data['Type'] == 'Notification':
         #
         # if this is a TEST_NOTIFICATION, just respond 200. Autoscale group is likely in te process of being created
         #
+        logger.info("sns(notification 1))")
         g = AutoScaleGroup(data)
+        logger.info("sns(notification 2): name = %s" % g.name)
         asg_name = g.name
         if 'Message' in data:
+            logger.info("sns(notification 3)")
             try:
                 msg = json.loads(data['Message'])
             except ValueError:
@@ -572,11 +604,14 @@ def sns(request):
                     t = g.db_client.describe_table(TableName=asg_name)
                     if 'ResponseMetadata' in t:
                         if t['ResponseMetadata']['HTTPStatusCode'] == STATUS_OK:
+                            logger.info("sns(notification 4)")
                             table_found = True
                 except g.db_client.exceptions.ResourceNotFoundException:
-                    logger.debug("process_autoscale_group_exception_1()")
+                    logger.info("process_autoscale_group_exception_1()")
                     table_found = False
+                logger.info("sns(notification 5)")
                 if table_found is True:
+                    logger.info("sns(notification 6)")
                     logger.info("process_autoscale_group(4): FOUND autoscale scale group table")
                     mt = g.db_resource.Table(asg_name)
                     try:
@@ -584,15 +619,13 @@ def sns(request):
                     except g.db_client.exceptions.ResourceNotFoundException:
                         logger.exception("process_autoscale_group()")
                         return
-                if 'Item' in a and 'UpdateCounts' in a['Item']:
+                logger.info("sns(notification 7): a = %s" % a)
+                if 'Item' in a and 'UpdateCountdown' in a['Item']:
+                    logger.info("sns(notification 8)")
                     item = a['Item']
-                    if item['UpdateCounts'] == 'True':
-                        logger.info("process_autoscale_group(7): UPDATING Autoscale Group Counts")
-                        counts_updated = False
-                        while counts_updated is False:
-                            counts_updated = g.update_instance_counts()
-                        item['UpdateCounts'] = 'False'
-                        mt.put_item(Item=item)
+                    item['UpdateCountdown'] = 0
+                    mt.put_item(Item=item)
+                logger.info("sns(notification 11)")
                 return HttpResponse(0)
             g = AutoScaleGroup(data)
             g.write_to_db(data, url)
